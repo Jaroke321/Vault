@@ -1,0 +1,19 @@
+[project]
+name = "vault-project"
+version = "0.1.0"
+description = "A simple Python package to keep track of your metal portfolio"
+readme = "README.md"
+authors = [
+    { name = "Jacob Keller", email = "jakekeller321@gmail.com" }
+]
+requires-python = ">=3.14"
+
+[project.scripts]
+vault = "Vault.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tools.setuptools]
+package-dir = {"" = "src"}
