@@ -11,31 +11,22 @@ class Prompt:
 
         while command_input not in ["exit", "quit", "q"]:
 
-            print(f"User Input: {command_input}")
-
             command, options = self.validate_command(command_input)
-            # print (f"Command: {command}")
-            # print (f"Asset: {options}")
 
             if command is not None:
-                method = getattr(self, command)
-                method(options)
+                command(options)
 
             # Get next command
             command_input = input("Vault/>")
 
-        self.logger.log("Exiting Vault...")
+        print("Exiting Vault...")
 
     def validate_command(self, command: str):
 
-        input = command.split(" ")
+        cmdlets = command.split(" ")
         for k, v in self.cmd_dict.items():
-            if input[0] in v:
-                return k, input[1:]
+            if cmdlets[0] == k:
+                return v, cmdlets[1:]
 
-        else:
-            print("Invalid command")
-            return None, None
-
-    def add(self, options: list):
-        print(f"Adding {options}")
+        print("Invalid command")
+        return None, None

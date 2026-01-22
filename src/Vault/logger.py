@@ -18,4 +18,4 @@ class Logger:
 
     def log(self, message: str):
         with open(self.log_file, 'a') as f:
-            f.write(f"{message}\n")
+            f.write(f"{self._get_timestamp()}: {message}\n")

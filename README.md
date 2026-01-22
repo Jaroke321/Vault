@@ -33,14 +33,16 @@ After installation, you can run the tool using the `vault` command:
 vault
 ```
 
-Currently, the tool outputs:
+The tool will start an interactive prompt where you can enter commands:
+
 ```
-Hello World
+Vault/>
 ```
 
-## Scripts
+### Available Commands
 
-- `vault`: The main entry point for the CLI application.
+- `add` / `buy` / `get`: Logs an add command with specified options.
+- `set`: Logs a set command with specified options.
 
 ## Project Structure
 
@@ -51,17 +53,16 @@ Vault/
 └── src/
     └── Vault/
         ├── __init__.py
-        └── cli.py      # CLI logic and entry point
+        ├── cli.py        # CLI logic and entry point
+        ├── db_handler.py # Database interactions (TODO)
+        ├── logger.py     # Logging utility
+        └── prompt.py     # Interactive prompt implementation
 ```
 
 ## Environment Variables
 
-TODO: Define any environment variables used by the project.
-
-## Tests
-
-TODO: Add tests and instructions on how to run them.
+Currently, no environment variables are required.
 
 ## License
 
-TODO: Specify the license for this project.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details (TODO: add LICENSE file).
