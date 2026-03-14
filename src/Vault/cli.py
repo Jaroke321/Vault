@@ -163,21 +163,31 @@ class CLI:
 
     def commit(self, options: list):
 
-        if not options: # user just typed `commit`, we will take this as a batch process
-            # Commit all
-            pass
 
-        for commit_str in options:
+        if not options: # user just typed `commit`, we will take this as a batch process
+            self._commit_all()
+            return
+
+        unique_options = set(options)
+        successful_commits = []
+
+        for commit_str in unique_options:
 
             try:
                 commit_num = int(commit_str)
 
                 if(commit_num > 0 and commit_num < len(self.commits)):
-                    current_commit = self.commits.pop(commit_num-1)
-
+                    current_commit = self.commits[commit_num-1]
+                    # TODO: Figure out how to handle commits to db 
+                    successful_commits.append(commit_num)
+                    
             except ValueError:
 
                 print(f"Invalid value given to the commit command, skipping.")
+
+        # Remove from list everything we just commited
+        for i in sorted(successful_commits, reverse=True):
+            self.commits.pop(i)
 
     def cmd_show(self, options: list):
 
@@ -190,44 +200,41 @@ class CLI:
                 return
             self._print_table(month_list, active_fields, data)
 
-        else:  # We have some sort of options input
+        elif len(options) == 1: # User either inputed a field name or a number ( i.e. show 12 || show debt )
+            try:              # Cover case where user said `show {months}`
+                num_months = int(options[0])
+                month_list, active_fields, data = self.db.get_history(months=num_months)
+                if not month_list:
+                    print("No snapshots recorded yet.")
+                    return
+                self._print_table(month_list, active_fields, data)
 
-            if len(options) == 1: # User either inputed a field name or a number ( i.e. show 12 || show debt )
-                try:              # Cover case where user said `show {months}`
-
-                    num_months = int(options[0])
-                    month_list, active_fields, data = self.db.get_history(months=num_months)
-                    if not month_list:
-                        print("No snapshots recorded yet.")
-                        return
-                    self._print_table(month_list, active_fields, data)
-
-                except ValueError: # Handle case where user said `show {field}`
-                    
-                    field_name = options[0]
-                    rows = self.db.get_history(field_name=field_name, months=num_months)
-                    if not rows:
-                        print(f"No history found for field '{field_name}'.")
-                        return
-                    self._print_field_trend(field_name, rows)
-
-            elif len(options) == 2: # User entered in field and months i.e. `show debt 9`
-
+            except ValueError: # Handle case where user said `show {field}`
+                
                 field_name = options[0]
-
-                try:
-                    num_months = int(options[1])
-                except ValueError:
-                    print(f"Invalid month count '{options[1]}'. Using 6.")
-
                 rows = self.db.get_history(field_name=field_name, months=num_months)
                 if not rows:
                     print(f"No history found for field '{field_name}'.")
                     return
                 self._print_field_trend(field_name, rows)
 
-            else:
-                print(f"Too many options given to the show command.")
+        elif len(options) == 2: # User entered in field and months i.e. `show debt 9`
+
+            field_name = options[0]
+
+            try:
+                num_months = int(options[1])
+            except ValueError:
+                print(f"Invalid month count '{options[1]}'. Using 6.")
+
+            rows = self.db.get_history(field_name=field_name, months=num_months)
+            if not rows:
+                print(f"No history found for field '{field_name}'.")
+                return
+            self._print_field_trend(field_name, rows)
+
+        else:
+            print(f"Too many options given to the show command.")
 
     def cmd_summary(self, options: list):
         rows = self.db.get_latest_values()
@@ -280,9 +287,13 @@ class CLI:
     update                        Interactively update all fields for this month
     update <field> <value>        Update a single field value for this month
 
+    commit                        Commit all pending updates
+    commit <n> [n ...]            Commit one or more pending updates by index
+
     show                          Table of last 6 months across all fields
+    show <n>                      Table of last N months across all fields
     show <field>                  Month-over-month trend for one field
-    show <field> <n>              Trend for last N months
+    show <field> <n>              Trend for one field over last N months
 
     summary                       Net worth snapshot (assets minus debts)
 
@@ -342,6 +353,14 @@ class CLI:
             print(f"  {month:<10}  ${value:>13,.2f}  {delta_str_color:>14}")
             prev_value = value
         print()
+
+    def _commit_all(self):
+
+        for current_commit in self.commits:
+            # TODO: Commit the current commit
+            pass
+
+        self.commits.clear()
 
 
 if __name__ == "__main__":
