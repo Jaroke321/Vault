@@ -38,6 +38,16 @@ class DBHandler:
                     UNIQUE(field_id, month)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS debt_asset_snapshots (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    field_id    INTEGER NOT NULL REFERENCES fields(id),
+                    month       TEXT NOT NULL,
+                    asset_value REAL NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    UNIQUE(field_id, month)
+                )
+            """)
             conn.commit()
 
     def add_category(self, name: str) -> int:
@@ -122,6 +132,31 @@ class DBHandler:
             conn.commit()
             return True
 
+    def record_asset_value(self, field_name: str, month: str, asset_value: float) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            row = conn.execute(
+                """SELECT f.id FROM fields f
+                   JOIN categories c ON c.id = f.category_id
+                   WHERE f.name = ?
+                     AND f.deactivated_at IS NULL
+                     AND c.name = 'debt'""",
+                (field_name.lower(),)
+            ).fetchone()
+            if row is None:
+                return False
+            field_id = row[0]
+            conn.execute(
+                """INSERT INTO debt_asset_snapshots (field_id, month, asset_value, recorded_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(field_id, month)
+                   DO UPDATE SET asset_value = excluded.asset_value,
+                                 recorded_at = excluded.recorded_at""",
+                (field_id, month, asset_value, datetime.datetime.now().isoformat())
+            )
+            conn.commit()
+            return True
+
     def get_history(self, field_name: str = None, months: int = 6):
         if field_name is not None:
             with sqlite3.connect(self.db_path) as conn:
@@ -168,16 +203,23 @@ class DBHandler:
     def get_latest_values(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
-                """SELECT f.name, c.name, s.value
+                """SELECT f.name, c.name, s.value, das.asset_value
                    FROM snapshots s
-                   JOIN fields f ON f.id = s.field_id
+                   JOIN fields f     ON f.id = s.field_id
                    JOIN categories c ON c.id = f.category_id
+                   LEFT JOIN debt_asset_snapshots das
+                          ON das.field_id = s.field_id
+                         AND das.month = (
+                                 SELECT MAX(das2.month)
+                                 FROM debt_asset_snapshots das2
+                                 WHERE das2.field_id = s.field_id
+                             )
                    WHERE f.deactivated_at IS NULL
                      AND s.month = (
-                         SELECT MAX(s2.month)
-                         FROM snapshots s2
-                         WHERE s2.field_id = f.id
-                     )
+                             SELECT MAX(s2.month)
+                             FROM snapshots s2
+                             WHERE s2.field_id = f.id
+                         )
                    ORDER BY c.name, f.name"""
             ).fetchall()
             return rows

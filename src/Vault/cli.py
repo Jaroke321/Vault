@@ -4,6 +4,14 @@ from .prompt import Prompt
 from .logger import Logger
 from .db_handler import DBHandler
 
+# ANSI color codes
+_BOLD   = "\033[1m"
+_CYAN   = "\033[36m"
+_RESET  = "\033[0m"
+
+def _cat_label(name: str) -> str:
+    return f"{_BOLD}{_CYAN}[{name.upper()}]{_RESET}"
+
 
 def main():
     logger = Logger(log_file="logs/Vault.log")
@@ -76,7 +84,7 @@ class CLI:
             current_cat = None
             for field_name, category_name in fields:
                 if category_name != current_cat:
-                    print(f"\n  [{category_name.upper()}]")
+                    print(f"\n  {_cat_label(category_name)}")
                     current_cat = category_name
                 print(f"    - {field_name}")
             print()
@@ -104,6 +112,16 @@ class CLI:
                     continue
                 self.db.record_value(field_name, current_month, value)
                 recorded += 1
+                if category_name.lower() == "debt":
+                    raw_asset = input(
+                        f"    {field_name} asset value (e.g. home value, press Enter to skip): "
+                    ).strip()
+                    if raw_asset != "":
+                        asset_value = self._parse_float(raw_asset)
+                        if asset_value is None:
+                            print(f"    Skipping asset value for '{field_name}': '{raw_asset}' is not a valid number.")
+                        else:
+                            self.db.record_asset_value(field_name, current_month, asset_value)
             print(f"Updated {recorded} value(s) for {current_month}.")
             self.logger.log(f"Interactive update: {recorded} value(s) recorded for {current_month}")
 
@@ -119,6 +137,18 @@ class CLI:
                 self.logger.log(f"Recorded {value} for {field_name} ({current_month})")
             else:
                 print(f"No active field named '{field_name}'. Use 'field list' to see active fields.")
+                return
+            if len(options) >= 3:
+                asset_value = self._parse_float(options[2])
+                if asset_value is None:
+                    print(f"Invalid asset value '{options[2]}'. Must be a number.")
+                else:
+                    asset_success = self.db.record_asset_value(field_name, current_month, asset_value)
+                    if asset_success:
+                        print(f"Recorded asset value {asset_value:,.2f} for '{field_name}' ({current_month}).")
+                        self.logger.log(f"Recorded asset value {asset_value} for {field_name} ({current_month})")
+                    else:
+                        print(f"Asset value not recorded: '{field_name}' is not an active debt field.")
 
         else:
             print("Usage: update | update <field_name> <value>")
@@ -158,17 +188,24 @@ class CLI:
         current_cat = None
 
         print("\n  === Net Worth Summary ===")
-        for field_name, category_name, value in rows:
+        for field_name, category_name, value, asset_value in rows:
             if category_name != current_cat:
-                print(f"\n  [{category_name.upper()}]")
+                print(f"\n  {_cat_label(category_name)}")
                 current_cat = category_name
             is_debt = category_name.lower() in DEBT_CATEGORIES
-            sign_label = " (liability)" if is_debt else ""
-            print(f"    {field_name:<20} ${value:>12,.2f}{sign_label}")
-            
-            if is_debt:
+
+            if is_debt and asset_value is not None:
+                equity = asset_value - value
+                print(f"    {field_name:<20} balance:  ${value:>12,.2f}  (liability)")
+                print(f"    {'':<20} value:    ${asset_value:>12,.2f}")
+                print(f"    {'':<20} equity:   ${equity:>12,.2f}")
+                liabilities += value
+                assets      += asset_value
+            elif is_debt:
+                print(f"    {field_name:<20} ${value:>12,.2f}  (liability)")
                 liabilities += value
             else:
+                print(f"    {field_name:<20} ${value:>12,.2f}")
                 assets += value
             
 
@@ -223,7 +260,7 @@ class CLI:
         current_cat = None
         for field_name, category_name in active_fields:
             if category_name != current_cat:
-                print(f"\n  [{category_name.upper()}]")
+                print(f"\n  {_cat_label(category_name)}")
                 current_cat = category_name
             row = f"  {field_name:<{NAME_W}}"
             for month in month_list:
