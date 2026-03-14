@@ -1,7 +1,10 @@
 class Prompt:
     """Base class for prompt engine."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, state_data_viewer=None, **kwargs):
+
+        self.state_data_viewer = state_data_viewer
+
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -11,6 +14,9 @@ class Prompt:
 
         while command_input not in ["exit", "quit", "q"]:
 
+            if(self.state_data_viewer):
+                self.state_data_viewer()
+                
             command, options = self.validate_command(command_input)
 
             if command is not None:

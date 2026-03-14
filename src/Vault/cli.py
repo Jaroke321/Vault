@@ -3,15 +3,7 @@ import datetime
 from .prompt import Prompt
 from .logger import Logger
 from .db_handler import DBHandler
-
-# ANSI color codes
-_BOLD   = "\033[1m"
-_CYAN   = "\033[36m"
-_RESET  = "\033[0m"
-
-def _cat_label(name: str) -> str:
-    return f"{_BOLD}{_CYAN}[{name.upper()}]{_RESET}"
-
+from .helper import *
 
 def main():
     logger = Logger(log_file="logs/Vault.log")
@@ -25,22 +17,33 @@ class CLI:
     def __init__(self, logger):
         self.logger = logger
         self.db = DBHandler()
+        self.commits = []
 
         self.commands = {
             "field":   self.cmd_field,
             "update":  self.cmd_update,
+            "commit":  self.commit,
             "show":    self.cmd_show,
             "summary": self.cmd_summary,
             "help":    self.cmd_help,
         }
 
     def run(self):
-        prompt = Prompt(project_name="Vault", logger=self.logger, cmd_dict=self.commands)
+        print_banner()
+        prompt = Prompt(project_name="Vault", logger=self.logger, state_data_viewer=self.commit_viewer, cmd_dict=self.commands)
         prompt.render()
 
     # ------------------------------------------------------------------
     # Commands
     # ------------------------------------------------------------------
+
+    def commit_viewer(self):
+
+        for i, commit in enumerate(self.commits, start=1):
+            print(cat_label(str(i), RED), end="")
+            for val in commit:
+                print(f" | {val}", end="")
+            print(" | ")
 
     def cmd_field(self, options: list):
         if not options:
@@ -84,7 +87,7 @@ class CLI:
             current_cat = None
             for field_name, category_name in fields:
                 if category_name != current_cat:
-                    print(f"\n  {_cat_label(category_name)}")
+                    print(f"\n  {cat_label(category_name)}")
                     current_cat = category_name
                 print(f"    - {field_name}")
             print()
@@ -93,6 +96,7 @@ class CLI:
             print(f"Unknown subcommand '{sub}'. Use: add, remove, list")
 
     def cmd_update(self, options: list):
+
         current_month = datetime.datetime.now().strftime("%Y-%m")
 
         if not options:
@@ -111,10 +115,11 @@ class CLI:
                     print(f"    Skipping '{field_name}': '{raw}' is not a valid number.")
                     continue
                 self.db.record_value(field_name, current_month, value)
+                self.commits.append([field_name, current_month, value])
                 recorded += 1
                 if category_name.lower() == "debt":
                     raw_asset = input(
-                        f"    {field_name} asset value (e.g. home value, press Enter to skip): "
+                        f"    {field_name} asset value (press Enter to skip): "
                     ).strip()
                     if raw_asset != "":
                         asset_value = self._parse_float(raw_asset)
@@ -122,6 +127,7 @@ class CLI:
                             print(f"    Skipping asset value for '{field_name}': '{raw_asset}' is not a valid number.")
                         else:
                             self.db.record_asset_value(field_name, current_month, asset_value)
+                            self.commits.append([field_name, current_month, asset_value])
             print(f"Updated {recorded} value(s) for {current_month}.")
             self.logger.log(f"Interactive update: {recorded} value(s) recorded for {current_month}")
 
@@ -132,8 +138,9 @@ class CLI:
                 print(f"Invalid value '{raw}'. Must be a number.")
                 return
             success = self.db.record_value(field_name, current_month, value)
+            self.commits.append([field_name, current_month, value])
             if success:
-                print(f"Recorded {value:,.2f} for '{field_name}' ({current_month}).")
+                # print(f"Recorded {value:,.2f} for '{field_name}' ({current_month}).")
                 self.logger.log(f"Recorded {value} for {field_name} ({current_month})")
             else:
                 print(f"No active field named '{field_name}'. Use 'field list' to see active fields.")
@@ -144,8 +151,9 @@ class CLI:
                     print(f"Invalid asset value '{options[2]}'. Must be a number.")
                 else:
                     asset_success = self.db.record_asset_value(field_name, current_month, asset_value)
+                    self.commits.append([field_name, current_month, asset_value])
                     if asset_success:
-                        print(f"Recorded asset value {asset_value:,.2f} for '{field_name}' ({current_month}).")
+                        # print(f"Recorded asset value {asset_value:,.2f} for '{field_name}' ({current_month}).")
                         self.logger.log(f"Recorded asset value {asset_value} for {field_name} ({current_month})")
                     else:
                         print(f"Asset value not recorded: '{field_name}' is not an active debt field.")
@@ -153,27 +161,73 @@ class CLI:
         else:
             print("Usage: update | update <field_name> <value>")
 
+    def commit(self, options: list):
+
+        if not options: # user just typed `commit`, we will take this as a batch process
+            # Commit all
+            pass
+
+        for commit_str in options:
+
+            try:
+                commit_num = int(commit_str)
+
+                if(commit_num > 0 and commit_num < len(self.commits)):
+                    current_commit = self.commits.pop(commit_num-1)
+
+            except ValueError:
+
+                print(f"Invalid value given to the commit command, skipping.")
+
     def cmd_show(self, options: list):
-        if not options:
-            month_list, active_fields, data = self.db.get_history(months=6)
+
+        num_months = 6     # default value for trend data
+
+        if not options:    # User just said to show all data (i.e `show`)
+            month_list, active_fields, data = self.db.get_history(months=num_months)
             if not month_list:
                 print("No snapshots recorded yet.")
                 return
             self._print_table(month_list, active_fields, data)
 
-        else:
-            field_name = options[0]
-            n_months = 6
-            if len(options) >= 2:
+        else:  # We have some sort of options input
+
+            if len(options) == 1: # User either inputed a field name or a number ( i.e. show 12 || show debt )
+                try:              # Cover case where user said `show {months}`
+
+                    num_months = int(options[0])
+                    month_list, active_fields, data = self.db.get_history(months=num_months)
+                    if not month_list:
+                        print("No snapshots recorded yet.")
+                        return
+                    self._print_table(month_list, active_fields, data)
+
+                except ValueError: # Handle case where user said `show {field}`
+                    
+                    field_name = options[0]
+                    rows = self.db.get_history(field_name=field_name, months=num_months)
+                    if not rows:
+                        print(f"No history found for field '{field_name}'.")
+                        return
+                    self._print_field_trend(field_name, rows)
+
+            elif len(options) == 2: # User entered in field and months i.e. `show debt 9`
+
+                field_name = options[0]
+
                 try:
-                    n_months = int(options[1])
+                    num_months = int(options[1])
                 except ValueError:
                     print(f"Invalid month count '{options[1]}'. Using 6.")
-            rows = self.db.get_history(field_name=field_name, months=n_months)
-            if not rows:
-                print(f"No history found for field '{field_name}'.")
-                return
-            self._print_field_trend(field_name, rows)
+
+                rows = self.db.get_history(field_name=field_name, months=num_months)
+                if not rows:
+                    print(f"No history found for field '{field_name}'.")
+                    return
+                self._print_field_trend(field_name, rows)
+
+            else:
+                print(f"Too many options given to the show command.")
 
     def cmd_summary(self, options: list):
         rows = self.db.get_latest_values()
@@ -190,7 +244,7 @@ class CLI:
         print("\n  === Net Worth Summary ===")
         for field_name, category_name, value, asset_value in rows:
             if category_name != current_cat:
-                print(f"\n  {_cat_label(category_name)}")
+                print(f"\n  {cat_label(category_name)}")
                 current_cat = category_name
             is_debt = category_name.lower() in DEBT_CATEGORIES
 
@@ -260,7 +314,7 @@ class CLI:
         current_cat = None
         for field_name, category_name in active_fields:
             if category_name != current_cat:
-                print(f"\n  {_cat_label(category_name)}")
+                print(f"\n  {cat_label(category_name)}")
                 current_cat = category_name
             row = f"  {field_name:<{NAME_W}}"
             for month in month_list:
@@ -283,7 +337,9 @@ class CLI:
                 delta = value - prev_value
                 sign = "+" if delta >= 0 else ""
                 delta_str = f"{sign}${delta:,.2f}"
-            print(f"  {month:<10}  ${value:>13,.2f}  {delta_str:>14}")
+                color = GREEN if delta >= 0 else RED
+                delta_str_color = cat_label(delta_str, color)
+            print(f"  {month:<10}  ${value:>13,.2f}  {delta_str_color:>14}")
             prev_value = value
         print()
 
