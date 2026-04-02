@@ -14,13 +14,13 @@ class Prompt:
 
         while command_input not in ["exit", "quit", "q"]:
 
-            if(self.state_data_viewer):
-                self.state_data_viewer()
-                
             command, options = self.validate_command(command_input)
-
+                
             if command is not None:
                 command(options)
+
+            if(self.state_data_viewer):
+                self.state_data_viewer()
 
             # Get next command
             command_input = input("Vault/>")
@@ -34,5 +34,4 @@ class Prompt:
             if cmdlets[0] == k:
                 return v, cmdlets[1:]
 
-        print("Invalid command")
         return None, None

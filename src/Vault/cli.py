@@ -18,6 +18,7 @@ class CLI:
         self.logger = logger
         self.db = DBHandler()
         self.commits = []
+        self.need_print = True
 
         self.commands = {
             "field":   self.cmd_field,
@@ -38,16 +39,32 @@ class CLI:
     # ------------------------------------------------------------------
 
     def commit_viewer(self):
+        if not self.commits or self.need_print == False:
+            self.need_print = True
+            return
 
-        for i, commit in enumerate(self.commits, start=1):
-            print(cat_label(str(i), RED), end="")
-            for val in commit:
-                print(f" | {val}", end="")
-            print(" | ")
+        headers = ["#", "Field", "Month", "Value"]
+        rows = [[str(i), c[0], c[1], str(c[2])] for i, c in enumerate(self.commits, start=1)]
+
+        widths = [len(h) for h in headers]
+        for row in rows:
+            for j, cell in enumerate(row):
+                widths[j] = max(widths[j], len(cell))
+
+        fmt = "  " + "  ".join(f"{{:<{w}}}" for w in widths)
+        sep = "  " + "  ".join("-" * w for w in widths)
+
+        print(fmt.format(*headers))
+        print(sep)
+        for row in rows:
+            line = fmt.format(*row)
+            colored_num = f"{BOLD}{MAGENTA}{row[0]}{RESET}"
+            line = line.replace(row[0], colored_num, 1)
+            print(line)
 
     def cmd_field(self, options: list):
         if not options:
-            print("Usage: field add <category> <name> | field remove <name> | field list")
+            print("Usage: field add <category> <name> | field remove <name> | field list | field set <category> unit <unit>")
             return
 
         sub = options[0]
@@ -85,15 +102,27 @@ class CLI:
                 print("No active fields. Use 'field add <category> <name>' to add one.")
                 return
             current_cat = None
-            for field_name, category_name in fields:
+            for field_name, category_name, unit in fields:
                 if category_name != current_cat:
-                    print(f"\n  {cat_label(category_name)}")
+                    unit_str = f" [{unit}]" if unit != "$" else ""
+                    print(f"\n  {cat_label(category_name)}{unit_str}")
                     current_cat = category_name
                 print(f"    - {field_name}")
             print()
 
+        elif sub == "set":
+            if len(options) != 4:
+                print("Usage: field set <category> unit <unit>")
+                return
+            category, prop, value = options[1], options[2], options[3]
+            if prop == "unit":
+                success = self.db.set_category_unit(category, value)
+                
+            else:
+                print(f"Unknown property '{prop}'. Supported: unit")
+
         else:
-            print(f"Unknown subcommand '{sub}'. Use: add, remove, list")
+            print(f"Unknown subcommand '{sub}'. Use: add, remove, list, set")
 
     def cmd_update(self, options: list):
 
@@ -106,7 +135,7 @@ class CLI:
                 return
             print(f"Updating values for {current_month}. Press Enter to skip a field.")
             recorded = 0
-            for field_name, category_name in fields:
+            for field_name, category_name, unit in fields:
                 raw = input(f"  {category_name}/{field_name}: ").strip()
                 if raw == "":
                     continue
@@ -138,9 +167,8 @@ class CLI:
                 print(f"Invalid value '{raw}'. Must be a number.")
                 return
             success = self.db.record_value(field_name, current_month, value)
-            self.commits.append([field_name, current_month, value])
             if success:
-                # print(f"Recorded {value:,.2f} for '{field_name}' ({current_month}).")
+                self.commits.append([field_name, current_month, value])
                 self.logger.log(f"Recorded {value} for {field_name} ({current_month})")
             else:
                 print(f"No active field named '{field_name}'. Use 'field list' to see active fields.")
@@ -191,6 +219,8 @@ class CLI:
 
     def cmd_show(self, options: list):
 
+        self.need_print = False
+
         num_months = 6     # default value for trend data
 
         if not options:    # User just said to show all data (i.e `show`)
@@ -210,13 +240,14 @@ class CLI:
                 self._print_table(month_list, active_fields, data)
 
             except ValueError: # Handle case where user said `show {field}`
-                
+
                 field_name = options[0]
                 rows = self.db.get_history(field_name=field_name, months=num_months)
                 if not rows:
                     print(f"No history found for field '{field_name}'.")
                     return
-                self._print_field_trend(field_name, rows)
+                unit = self.db.get_field_unit(field_name)
+                self._print_field_trend(field_name, rows, unit)
 
         elif len(options) == 2: # User entered in field and months i.e. `show debt 9`
 
@@ -231,43 +262,51 @@ class CLI:
             if not rows:
                 print(f"No history found for field '{field_name}'.")
                 return
-            self._print_field_trend(field_name, rows)
+            unit = self.db.get_field_unit(field_name)
+            self._print_field_trend(field_name, rows, unit)
 
         else:
             print(f"Too many options given to the show command.")
 
     def cmd_summary(self, options: list):
+        self.need_print = False
+
         rows = self.db.get_latest_values()
         if not rows:
             print("No data recorded yet.")
             return
 
         DEBT_CATEGORIES = {"debt"}
+        MONETARY_UNITS = {"$", "€", "£", "¥"}
 
         assets = 0.0
         liabilities = 0.0
         current_cat = None
 
         print("\n  === Net Worth Summary ===")
-        for field_name, category_name, value, asset_value in rows:
+        for field_name, category_name, unit, value, asset_value in rows:
             if category_name != current_cat:
                 print(f"\n  {cat_label(category_name)}")
                 current_cat = category_name
             is_debt = category_name.lower() in DEBT_CATEGORIES
+            is_monetary = unit in MONETARY_UNITS
 
             if is_debt and asset_value is not None:
                 equity = asset_value - value
-                print(f"    {field_name:<20} balance:  ${value:>12,.2f}  (liability)")
-                print(f"    {'':<20} value:    ${asset_value:>12,.2f}")
-                print(f"    {'':<20} equity:   ${equity:>12,.2f}")
-                liabilities += value
-                assets      += asset_value
+                print(f"    {field_name:<20} balance:  {format_value(value, unit):>16}  (liability)")
+                print(f"    {'':<20} value:    {format_value(asset_value, unit):>16}")
+                print(f"    {'':<20} equity:   {format_value(equity, unit):>16}")
+                if is_monetary:
+                    liabilities += value
+                    assets      += asset_value
             elif is_debt:
-                print(f"    {field_name:<20} ${value:>12,.2f}  (liability)")
-                liabilities += value
+                print(f"    {field_name:<20} {format_value(value, unit):>16}  (liability)")
+                if is_monetary:
+                    liabilities += value
             else:
-                print(f"    {field_name:<20} ${value:>12,.2f}")
-                assets += value
+                print(f"    {field_name:<20} {format_value(value, unit):>16}")
+                if is_monetary:
+                    assets += value
             
 
         net = assets - liabilities
@@ -278,11 +317,14 @@ class CLI:
         self.logger.log(f"Summary viewed: assets={assets:.2f}, liabilities={liabilities:.2f}, net={net:.2f}")
 
     def cmd_help(self, options: list):
+        self.need_print = False
+
         print("""
   Vault Commands:
-    field add <category> <name>   Register a new tracked field
-    field remove <name>           Deactivate a field (history preserved)
-    field list                    Show all active fields by category
+    field add <category> <name>          Register a new tracked field
+    field remove <name>                  Deactivate a field (history preserved)
+    field list                           Show all active fields by category
+    field set <category> unit <unit>     Set display unit for a category (default: $)
 
     update                        Interactively update all fields for this month
     update <field> <value>        Update a single field value for this month
@@ -323,34 +365,35 @@ class CLI:
         print("  " + "-" * (NAME_W + (COL_W + 2) * len(month_list)))
 
         current_cat = None
-        for field_name, category_name in active_fields:
+        for field_name, category_name, unit in active_fields:
             if category_name != current_cat:
                 print(f"\n  {cat_label(category_name)}")
                 current_cat = category_name
             row = f"  {field_name:<{NAME_W}}"
             for month in month_list:
                 val = data.get(field_name, {}).get(month)
-                cell = f"${val:,.2f}" if val is not None else "--"
+                cell = format_value(val, unit) if val is not None else "--"
                 row += f"  {cell:>{COL_W}}"
             print(row)
         print()
 
-    def _print_field_trend(self, field_name, rows):
+    def _print_field_trend(self, field_name, rows, unit: str = "$"):
         print(f"\n  Trend for '{field_name}':")
-        print(f"  {'Month':<10}  {'Value':>14}  {'Delta':>14}")
-        print("  " + "-" * 44)
+        print(f"  {'Month':<10}  {'Value':>17}  {'Delta':>17}")
+        print("  " + "-" * 50)
 
         prev_value = None
         for month, value in rows:
+            val_str = format_value(value, unit)
             if prev_value is None:
-                delta_str = "--"
+                delta_str_color = "--"
             else:
                 delta = value - prev_value
                 sign = "+" if delta >= 0 else ""
-                delta_str = f"{sign}${delta:,.2f}"
+                delta_str = f"{sign}{format_value(abs(delta), unit)}"
                 color = GREEN if delta >= 0 else RED
                 delta_str_color = cat_label(delta_str, color)
-            print(f"  {month:<10}  ${value:>13,.2f}  {delta_str_color:>14}")
+            print(f"  {month:<10}  {val_str:>17}  {delta_str_color:>17}")
             prev_value = value
         print()
 

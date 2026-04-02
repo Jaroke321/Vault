@@ -14,6 +14,13 @@ WHITE    = "\033[37m"
 def cat_label(name: str, color: str = CYAN) -> str:
     return f"{BOLD}{color}{name.upper()}{RESET}"
 
+_PREFIX_UNITS = {"$", "€", "£", "¥"}
+
+def format_value(value: float, unit: str = "$") -> str:
+    if unit in _PREFIX_UNITS:
+        return f"{unit}{value:,.2f}"
+    return f"{value:,.4f} {unit}"
+
 _VAULT_ART = (
     f"{BOLD}{YELLOW}" +
     r"""

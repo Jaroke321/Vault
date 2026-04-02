@@ -16,7 +16,8 @@ class DBHandler:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS categories (
                     id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE
+                    name TEXT NOT NULL UNIQUE,
+                    unit TEXT NOT NULL DEFAULT '$'
                 )
             """)
             conn.execute("""
@@ -48,6 +49,13 @@ class DBHandler:
                     UNIQUE(field_id, month)
                 )
             """)
+            self._migrate(conn)
+            conn.commit()
+
+    def _migrate(self, conn):
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(categories)").fetchall()]
+        if "unit" not in cols:
+            conn.execute("ALTER TABLE categories ADD COLUMN unit TEXT NOT NULL DEFAULT '$'")
             conn.commit()
 
     def add_category(self, name: str) -> int:
@@ -100,10 +108,29 @@ class DBHandler:
             conn.commit()
             return cursor.rowcount == 1
 
+    def set_category_unit(self, category: str, unit: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "UPDATE categories SET unit = ? WHERE name = ?",
+                (unit.strip(), category.lower())
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def get_field_unit(self, field_name: str) -> str:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT c.unit FROM fields f
+                   JOIN categories c ON c.id = f.category_id
+                   WHERE f.name = ? AND f.deactivated_at IS NULL""",
+                (field_name.lower(),)
+            ).fetchone()
+        return row[0] if row else "$"
+
     def get_active_fields(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
-                """SELECT f.name, c.name
+                """SELECT f.name, c.name, c.unit
                    FROM fields f
                    JOIN categories c ON c.id = f.category_id
                    WHERE f.deactivated_at IS NULL
@@ -203,7 +230,7 @@ class DBHandler:
     def get_latest_values(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
-                """SELECT f.name, c.name, s.value, das.asset_value
+                """SELECT f.name, c.name, c.unit, s.value, das.asset_value
                    FROM snapshots s
                    JOIN fields f     ON f.id = s.field_id
                    JOIN categories c ON c.id = f.category_id
