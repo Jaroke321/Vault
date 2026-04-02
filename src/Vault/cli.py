@@ -1,32 +1,40 @@
 import datetime
+import time
+from rich.progress import track
 
 from .prompt import Prompt
 from .logger import Logger
 from .db_handler import DBHandler
+from .price_fetcher import PriceFetcher
 from .helper import *
 
 def main():
     logger = Logger(log_file="logs/Vault.log")
-    CLI(logger).run()
+    db = DBHandler()
+    fetcher = PriceFetcher(db, logger)
+    fetcher.fetch_all()
+    CLI(logger, db, fetcher).run()
 
 
 class CLI:
     """Implementation class for the Vault finance tracker. Records monthly financial
     snapshots across user-defined fields organized into categories."""
 
-    def __init__(self, logger):
+    def __init__(self, logger, db=None, price_fetcher=None):
         self.logger = logger
-        self.db = DBHandler()
+        self.db = db if db is not None else DBHandler()
+        self.price_fetcher = price_fetcher
         self.commits = []
         self.need_print = True
 
         self.commands = {
-            "field":   self.cmd_field,
-            "update":  self.cmd_update,
-            "commit":  self.commit,
-            "show":    self.cmd_show,
-            "summary": self.cmd_summary,
-            "help":    self.cmd_help,
+            "field":     self.cmd_field,
+            "update":    self.cmd_update,
+            "commit":    self.commit,
+            "show":      self.cmd_show,
+            "summary":   self.cmd_summary,
+            "commodity": self.cmd_commodity,
+            "help":      self.cmd_help,
         }
 
     def run(self):
@@ -143,8 +151,8 @@ class CLI:
                 if value is None:
                     print(f"    Skipping '{field_name}': '{raw}' is not a valid number.")
                     continue
-                self.db.record_value(field_name, current_month, value)
-                self.commits.append([field_name, current_month, value])
+                # self.db.record_value(field_name, current_month, value)
+                self.commits.append([field_name, current_month, value, "value"])
                 recorded += 1
                 if category_name.lower() == "debt":
                     raw_asset = input(
@@ -155,8 +163,8 @@ class CLI:
                         if asset_value is None:
                             print(f"    Skipping asset value for '{field_name}': '{raw_asset}' is not a valid number.")
                         else:
-                            self.db.record_asset_value(field_name, current_month, asset_value)
-                            self.commits.append([field_name, current_month, asset_value])
+                            # self.db.record_asset_value(field_name, current_month, asset_value)
+                            self.commits.append([field_name, current_month, asset_value, "asset"])
             print(f"Updated {recorded} value(s) for {current_month}.")
             self.logger.log(f"Interactive update: {recorded} value(s) recorded for {current_month}")
 
@@ -166,25 +174,17 @@ class CLI:
             if value is None:
                 print(f"Invalid value '{raw}'. Must be a number.")
                 return
-            success = self.db.record_value(field_name, current_month, value)
-            if success:
-                self.commits.append([field_name, current_month, value])
-                self.logger.log(f"Recorded {value} for {field_name} ({current_month})")
-            else:
-                print(f"No active field named '{field_name}'. Use 'field list' to see active fields.")
-                return
+            # success = self.db.record_value(field_name, current_month, value)
+            self.commits.append([field_name, current_month, value, "value"])
+            
             if len(options) >= 3:
                 asset_value = self._parse_float(options[2])
                 if asset_value is None:
                     print(f"Invalid asset value '{options[2]}'. Must be a number.")
                 else:
-                    asset_success = self.db.record_asset_value(field_name, current_month, asset_value)
-                    self.commits.append([field_name, current_month, asset_value])
-                    if asset_success:
-                        # print(f"Recorded asset value {asset_value:,.2f} for '{field_name}' ({current_month}).")
-                        self.logger.log(f"Recorded asset value {asset_value} for {field_name} ({current_month})")
-                    else:
-                        print(f"Asset value not recorded: '{field_name}' is not an active debt field.")
+                    # asset_success = self.db.record_asset_value(field_name, current_month, asset_value)
+                    self.commits.append([field_name, current_month, asset_value, "asset"])
+                    
 
         else:
             print("Usage: update | update <field_name> <value>")
@@ -199,19 +199,23 @@ class CLI:
         unique_options = set(options)
         successful_commits = []
 
-        for commit_str in unique_options:
+        for commit_str in track(unique_options, description="Commiting Changes..."):
+            time.sleep(0.5)
 
             try:
                 commit_num = int(commit_str)
 
-                if(commit_num > 0 and commit_num < len(self.commits)):
+                if(commit_num > 0 and commit_num <= len(self.commits)):
                     current_commit = self.commits[commit_num-1]
-                    # TODO: Figure out how to handle commits to db 
-                    successful_commits.append(commit_num)
+                    if current_commit[-1] == "value":
+                        self.db.record_value(current_commit[0], current_commit[1], current_commit[2])
+                    else:
+                        self.db.record_asset_value(current_commit[0], current_commit[1], current_commit[2])
+
+                    successful_commits.append(commit_num-1)
                     
             except ValueError:
-
-                print(f"Invalid value given to the commit command, skipping.")
+                pass
 
         # Remove from list everything we just commited
         for i in sorted(successful_commits, reverse=True):
@@ -284,37 +288,142 @@ class CLI:
         current_cat = None
 
         print("\n  === Net Worth Summary ===")
-        for field_name, category_name, unit, value, asset_value in rows:
+
+        for field_name, category_name, unit, value, asset_value, field_id in rows:
+
             if category_name != current_cat:
                 print(f"\n  {cat_label(category_name)}")
                 current_cat = category_name
+                
             is_debt = category_name.lower() in DEBT_CATEGORIES
             is_monetary = unit in MONETARY_UNITS
 
             if is_debt and asset_value is not None:
                 equity = asset_value - value
+                liabilities += value
+                assets      += asset_value
                 print(f"    {field_name:<20} balance:  {format_value(value, unit):>16}  (liability)")
                 print(f"    {'':<20} value:    {format_value(asset_value, unit):>16}")
                 print(f"    {'':<20} equity:   {format_value(equity, unit):>16}")
-                if is_monetary:
-                    liabilities += value
-                    assets      += asset_value
+
             elif is_debt:
                 print(f"    {field_name:<20} {format_value(value, unit):>16}  (liability)")
-                if is_monetary:
-                    liabilities += value
+                liabilities += value
+                    
+            elif is_monetary:
+                print(f"    {field_name:<20} {format_value(value, unit):>16}")
+                assets += value
+
+            elif self.price_fetcher is not None:
+                price = self.price_fetcher.get_price(field_id)
+
+                if price is not None:
+                    usd_equiv = value * price
+                    assets += usd_equiv
+                    print(f"    {field_name:<20} {format_value(value, unit):>10} ~ {format_value(usd_equiv, '$'):>12} (@{format_value(price, '$')}/{unit})")
+
+                else:
+                    print(f"    {field_name:<20} {format_value(value, unit):>10} (no price)")
+
+
             else:
                 print(f"    {field_name:<20} {format_value(value, unit):>16}")
-                if is_monetary:
-                    assets += value
             
-
         net = assets - liabilities
         print(f"\n  {'Assets:':<20} ${assets:>12,.2f}")
         print(f"  {'Liabilities:':<20} ${liabilities:>12,.2f}")
         print(f"  {'Net Worth:':<20} ${net:>12,.2f}")
         print()
         self.logger.log(f"Summary viewed: assets={assets:.2f}, liabilities={liabilities:.2f}, net={net:.2f}")
+
+    def cmd_commodity(self, options: list):
+        self.need_print = False
+        VALID_SYMBOLS = set(PriceFetcher.SYMBOL_TO_TICKER.keys())
+
+        if not options:
+            print("Usage: commodity tag <field> <symbol> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity refresh")
+            return
+
+        sub = options[0]
+
+        if sub == "tag":
+            if len(options) < 3:
+                print("Usage: commodity tag <field> <symbol>")
+                print(f"  Supported symbols: {', '.join(sorted(VALID_SYMBOLS))}")
+                return
+            field_name, symbol = options[1], options[2].upper()
+            if symbol not in VALID_SYMBOLS:
+                print(f"Unknown symbol '{symbol}'. Supported: {', '.join(sorted(VALID_SYMBOLS))}")
+                return
+            success = self.db.set_commodity(field_name, symbol)
+            if success:
+                print(f"Field '{field_name}' tagged as {symbol}.")
+                self.logger.log(f"Commodity tag set: {field_name} -> {symbol}")
+            else:
+                print(f"No active field named '{field_name}'.")
+
+        elif sub == "untag":
+            if len(options) < 2:
+                print("Usage: commodity untag <field>")
+                return
+            success = self.db.remove_commodity(options[1])
+            if success:
+                print(f"Commodity tag removed from '{options[1]}'.")
+            else:
+                print(f"No commodity tag found for '{options[1]}'.")
+
+        elif sub == "override":
+            if len(options) < 3:
+                print("Usage: commodity override <field> <price> | commodity override <field> clear")
+                return
+            field_name, raw = options[1], options[2]
+            if raw.lower() == "clear":
+                price = None
+            else:
+                price = self._parse_float(raw)
+                if price is None:
+                    print(f"Invalid price '{raw}'. Must be a number or 'clear'.")
+                    return
+            success = self.db.set_commodity_override(field_name, price)
+            if success:
+                if price is None:
+                    print(f"Override cleared for '{field_name}'. Using live/cached price.")
+                else:
+                    print(f"Override price set for '{field_name}': {format_value(price, '$')}/unit.")
+                self.logger.log(f"Commodity override set: {field_name} -> {price}")
+            else:
+                print(f"No commodity tag found for '{field_name}'. Use 'commodity tag' first.")
+
+        elif sub == "list":
+            if self.price_fetcher is None:
+                print("Price fetcher not available.")
+                return
+            status_rows = self.price_fetcher.get_fetch_status()
+            if not status_rows:
+                print("No commodity-tagged fields. Use 'commodity tag <field> <symbol>' to add one.")
+                return
+            print(f"\n  {'Field':<20}  {'Symbol':<6}  {'Price':>12}  {'Source':<12}  {'Cached At'}")
+            print("  " + "-" * 72)
+            for field_name, symbol, price, source, cached_at in status_rows:
+                price_str = format_value(price, '$') if price is not None else "N/A"
+                age_str = cached_at[:19] if cached_at else "never"
+                print(f"  {field_name:<20}  {symbol:<6}  {price_str:>12}  {source:<12}  {age_str}")
+            print()
+
+        elif sub == "refresh":
+            if self.price_fetcher is None:
+                print("Price fetcher not available.")
+                return
+            print("Refreshing commodity prices...")
+            fetched = self.price_fetcher.fetch_all()
+            if fetched:
+                for sym, price in sorted(fetched.items()):
+                    print(f"  {sym}: {format_value(price, '$')}")
+            else:
+                print("  No prices fetched (no tagged fields or fetch failed).")
+
+        else:
+            print(f"Unknown subcommand '{sub}'. Use: tag, untag, override, list, refresh")
 
     def cmd_help(self, options: list):
         self.need_print = False
@@ -338,6 +447,13 @@ class CLI:
     show <field> <n>              Trend for one field over last N months
 
     summary                       Net worth snapshot (assets minus debts)
+
+    commodity tag <field> <symbol>        Tag a field as tracking a commodity (XAU, XAG, XPT, XPD)
+    commodity untag <field>               Remove commodity tag from a field
+    commodity override <field> <price>    Lock a manual price per unit for this field
+    commodity override <field> clear      Remove price lock (use live/cached price)
+    commodity list                        Show all tagged fields with current prices and source
+    commodity refresh                     Re-fetch live prices for all tagged fields
 
     help                          Show this help message
     exit / quit / q               Exit Vault
@@ -399,9 +515,12 @@ class CLI:
 
     def _commit_all(self):
 
-        for current_commit in self.commits:
-            # TODO: Commit the current commit
-            pass
+        for current_commit in track(self.commits, description="Commiting Changes..."):
+            time.sleep(0.5)
+            if(current_commit[-1] == "value"):
+                self.db.record_value(current_commit[0], current_commit[1], current_commit[2])
+            elif(current_commit[-1] == "asset"):
+                self.db.record_asset_value(current_commit[0], current_commit[1], current_commit[2])
 
         self.commits.clear()
 

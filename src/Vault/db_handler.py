@@ -49,6 +49,16 @@ class DBHandler:
                     UNIQUE(field_id, month)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS commodity_prices (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    field_id       INTEGER NOT NULL UNIQUE REFERENCES fields(id),
+                    symbol         TEXT NOT NULL,
+                    override_price REAL,
+                    cached_price   REAL,
+                    cached_at      TEXT
+                )
+            """)
             self._migrate(conn)
             conn.commit()
 
@@ -56,6 +66,20 @@ class DBHandler:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(categories)").fetchall()]
         if "unit" not in cols:
             conn.execute("ALTER TABLE categories ADD COLUMN unit TEXT NOT NULL DEFAULT '$'")
+            conn.commit()
+
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "commodity_prices" not in tables:
+            conn.execute("""
+                CREATE TABLE commodity_prices (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    field_id       INTEGER NOT NULL UNIQUE REFERENCES fields(id),
+                    symbol         TEXT NOT NULL,
+                    override_price REAL,
+                    cached_price   REAL,
+                    cached_at      TEXT
+                )
+            """)
             conn.commit()
 
     def add_category(self, name: str) -> int:
@@ -230,7 +254,7 @@ class DBHandler:
     def get_latest_values(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
-                """SELECT f.name, c.name, c.unit, s.value, das.asset_value
+                """SELECT f.name, c.name, c.unit, s.value, das.asset_value, f.id
                    FROM snapshots s
                    JOIN fields f     ON f.id = s.field_id
                    JOIN categories c ON c.id = f.category_id
@@ -250,3 +274,71 @@ class DBHandler:
                    ORDER BY c.name, f.name"""
             ).fetchall()
             return rows
+
+    def set_commodity(self, field_name: str, symbol: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            row = conn.execute(
+                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (field_name.lower(),)
+            ).fetchone()
+            if row is None:
+                return False
+            field_id = row[0]
+            conn.execute(
+                """INSERT INTO commodity_prices (field_id, symbol)
+                   VALUES (?, ?)
+                   ON CONFLICT(field_id) DO UPDATE SET symbol = excluded.symbol""",
+                (field_id, symbol.upper())
+            )
+            conn.commit()
+            return True
+
+    def remove_commodity(self, field_name: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            row = conn.execute(
+                "SELECT id FROM fields WHERE name = ?", (field_name.lower(),)
+            ).fetchone()
+            if row is None:
+                return False
+            cursor = conn.execute(
+                "DELETE FROM commodity_prices WHERE field_id = ?", (row[0],)
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def set_commodity_override(self, field_name: str, price) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT cp.id FROM commodity_prices cp
+                   JOIN fields f ON f.id = cp.field_id
+                   WHERE f.name = ?""",
+                (field_name.lower(),)
+            ).fetchone()
+            if row is None:
+                return False
+            conn.execute(
+                "UPDATE commodity_prices SET override_price = ? WHERE id = ?",
+                (price, row[0])
+            )
+            conn.commit()
+            return True
+
+    def get_commodity_fields(self) -> list:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT f.id, f.name, cp.symbol, cp.override_price, cp.cached_price, cp.cached_at
+                   FROM commodity_prices cp
+                   JOIN fields f ON f.id = cp.field_id
+                   WHERE f.deactivated_at IS NULL"""
+            ).fetchall()
+            return rows
+
+    def update_cached_price(self, field_id: int, price: float, timestamp: str) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE commodity_prices SET cached_price = ?, cached_at = ? WHERE field_id = ?",
+                (price, timestamp, field_id)
+            )
+            conn.commit()
