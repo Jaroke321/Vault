@@ -162,6 +162,25 @@ class DBHandler:
             ).fetchall()
             return rows
 
+    def get_categories(self) -> list:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT name FROM categories ORDER BY name"
+            ).fetchall()
+            return [c[0] for c in rows]
+
+    def get_fields_by_category(self, category_name: str) -> list:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT f.name
+                   FROM fields f
+                   JOIN categories c ON c.id = f.category_id
+                   WHERE c.name = ? AND f.deactivated_at IS NULL
+                   ORDER BY f.name""",
+                (category_name,)
+            ).fetchall()
+            return [r[0] for r in rows]
+
     def record_value(self, field_name: str, month: str, value: float) -> bool:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")

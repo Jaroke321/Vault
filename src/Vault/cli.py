@@ -222,7 +222,6 @@ class CLI:
             self.commits.pop(i)
 
     def cmd_show(self, options: list):
-
         self.need_print = False
 
         num_months = 6     # default value for trend data
@@ -234,40 +233,50 @@ class CLI:
                 return
             self._print_table(month_list, active_fields, data)
 
-        elif len(options) == 1: # User either inputed a field name or a number ( i.e. show 12 || show debt )
-            try:              # Cover case where user said `show {months}`
-                num_months = int(options[0])
+        elif len(options) == 1: # User either inputed a field / category name or a number ( i.e. show 12 || show savings )
+            # Cover case where user is inputing months
+            num_months = self._parse_int(options[0])
+            if num_months:
+
                 month_list, active_fields, data = self.db.get_history(months=num_months)
-                if not month_list:
-                    print("No snapshots recorded yet.")
-                    return
-                self._print_table(month_list, active_fields, data)
+                if month_list:
+                    self._print_table(month_list, active_fields, data)
 
-            except ValueError: # Handle case where user said `show {field}`
-
+            elif self._is_a_field_name(options[0]):   
+                # Try case where user is looking for a field or category
                 field_name = options[0]
+                num_months = 6
+                rows = self.db.get_history(field_name=field_name, months=num_months)
+                unit = self.db.get_field_unit(field_name)
+                self._print_field_trend(field_name, rows, unit)
+
+            elif self._is_a_category_name(options[0]):
+                # try case where user is inputing an entire category
+                cat_name = options[0]
+                num_months = 6
+                field_list = self.db.get_fields_by_category(category_name=cat_name)
+
+                for field in field_list:
+                    rows = self.db.get_history(field_name=field, months=num_months)
+                    unit = self.db.get_field_unit(field)
+                    self._print_field_trend(field, rows, unit)
+
+            else:
+                print(f"Couldnt find any record for the value {options[0]}")
+
+        elif len(options) == 2: # User entered in field and months i.e. `show debt 9`
+
+            field_name = options[0]
+
+            num_months = self._parse_int(options[1])
+            if num_months:
+
                 rows = self.db.get_history(field_name=field_name, months=num_months)
                 if not rows:
                     print(f"No history found for field '{field_name}'.")
                     return
                 unit = self.db.get_field_unit(field_name)
                 self._print_field_trend(field_name, rows, unit)
-
-        elif len(options) == 2: # User entered in field and months i.e. `show debt 9`
-
-            field_name = options[0]
-
-            try:
-                num_months = int(options[1])
-            except ValueError:
-                print(f"Invalid month count '{options[1]}'. Using 6.")
-
-            rows = self.db.get_history(field_name=field_name, months=num_months)
-            if not rows:
-                print(f"No history found for field '{field_name}'.")
-                return
-            unit = self.db.get_field_unit(field_name)
-            self._print_field_trend(field_name, rows, unit)
 
         else:
             print(f"Too many options given to the show command.")
@@ -435,10 +444,11 @@ class CLI:
     field list                           Show all active fields by category
     field set <category> unit <unit>     Set display unit for a category (default: $)
 
-    update                        Interactively update all fields for this month
-    update <field> <value>        Update a single field value for this month
+    update                               Interactively stage values for all fields this month
+    update <field> <value>               Stage a value for a single field
+    update <field> <value> <asset>       Stage a value + asset value for a debt field
 
-    commit                        Commit all pending updates
+    commit                        Commit all pending staged updates to the database
     commit <n> [n ...]            Commit one or more pending updates by index
 
     show                          Table of last 6 months across all fields
@@ -463,12 +473,33 @@ class CLI:
     # Private helpers
     # ------------------------------------------------------------------
 
+    def _parse_int(self, raw:str):
+        try:
+            cleaned = raw.replace("$", "").replace(",", "").strip()
+            return int(cleaned)
+        except ValueError:
+            return None
+
     def _parse_float(self, raw: str):
         try:
             cleaned = raw.replace("$", "").replace(",", "").strip()
             return float(cleaned)
         except ValueError:
             return None
+        
+    def _is_a_field_name(self, raw: str):
+        all_fields = [f for f, c, u in self.db.get_active_fields()]
+
+        if raw.lower() in all_fields:
+            return True
+        return False
+
+    def _is_a_category_name(self, raw: str):
+        all_cats = self.db.get_categories()
+
+        if raw.lower() in all_cats:
+            return True
+        return False
 
     def _print_table(self, month_list, active_fields, data):
         COL_W = 14

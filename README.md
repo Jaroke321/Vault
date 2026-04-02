@@ -12,10 +12,6 @@ Vault helps you manage financial fields across categories (e.g. savings, investm
 
 ## Setup
 
-```bash
-pip install vault-project
-```
-
 ### Installation from source
 
 1. Clone the repository:
@@ -28,6 +24,13 @@ pip install vault-project
    ```bash
    pip install .
    ```
+
+### Installation from PyPI
+
+If published to PyPI:
+```bash
+pip install vault-project
+```
 
 ## Usage
 
@@ -120,6 +123,7 @@ The `summary` output will show:
 Vault/
 ├── pyproject.toml        # Project configuration and metadata
 ├── README.md             # Project documentation
+├── vault.db              # SQLite database (auto-created at runtime)
 └── src/
     └── Vault/
         ├── __init__.py
