@@ -2,11 +2,23 @@ import datetime
 import time
 from rich.progress import track
 
+# Extra imports of useful things
 from .prompt import Prompt
 from .logger import Logger
 from .db_handler import DBHandler
 from .price_fetcher import PriceFetcher
 from .helper import *
+
+# Command classes
+from .commands import FieldCommand
+
+#TODO:
+# This big todo is that I want to split all functions / commands into classes
+# I want to update the prompt class to handle commands and subcommands without breaking our current use case
+# Each class will follow a teamplate and will have an entry command and then sub commands as methods
+# Will need to think how this changes prompt class
+# Will also neeed to think through how this effects current state data since everything up until this point
+# has been in the CLI class
 
 def main():
     logger = Logger(log_file="logs/Vault.log")
@@ -21,21 +33,33 @@ class CLI:
     snapshots across user-defined fields organized into categories."""
 
     def __init__(self, logger, db=None, price_fetcher=None):
+
         self.logger = logger
         self.db = db if db is not None else DBHandler()
         self.price_fetcher = price_fetcher
         self.commits = []
         self.need_print = True
 
+        # Need to init classes before using
+        command_class_list = [FieldCommand]
+        self.command_classes = self.load_command_classes(command_class_list)
+
+        # Handle any command calls available to the user that is not in its own command class
+        # This will allow the user to call the key value and the prompt will then pass any options
+        # to the function tied to that command
         self.commands = {
-            "field":     self.cmd_field,
             "update":    self.cmd_update,
-            "commit":    self.commit,
+            "commit":    self.cmd_commit,
             "show":      self.cmd_show,
             "summary":   self.cmd_summary,
             "commodity": self.cmd_commodity,
             "help":      self.cmd_help,
         }
+
+        # add command class entry points to the commands list
+        self.commands |= self.command_classes
+
+        #TODO: Need to add in command line arguments for more usability
 
     def run(self):
         print_banner()
@@ -45,6 +69,17 @@ class CLI:
     # ------------------------------------------------------------------
     # Commands
     # ------------------------------------------------------------------
+
+    def load_command_classes(self, command_class_list: list) -> dict:
+
+        commands = {}
+
+        for cls in command_class_list:
+            instance = cls(self.db, self.logger, self.price_fetcher)
+            commands.update(instance.init_command())
+
+        return commands
+
 
     def commit_viewer(self):
         if not self.commits or self.need_print == False:
@@ -69,68 +104,6 @@ class CLI:
             colored_num = f"{BOLD}{MAGENTA}{row[0]}{RESET}"
             line = line.replace(row[0], colored_num, 1)
             print(line)
-
-    def cmd_field(self, options: list):
-        if not options:
-            print("Usage: field add <category> <name> | field remove <name> | field list | field set <category> unit <unit>")
-            return
-
-        sub = options[0]
-
-        if sub == "add":
-            if len(options) < 3:
-                print("Usage: field add <category> <name>")
-                return
-            category, name = options[1], options[2]
-            if " " in name or " " in category:
-                print("Field and category names cannot contain spaces.")
-                return
-            success = self.db.add_field(name, category)
-            if success:
-                print(f"Field '{name}' added under category '{category}'.")
-                self.logger.log(f"Field added: {name} (category: {category})")
-            else:
-                print(f"Field '{name}' already exists.")
-
-        elif sub == "remove":
-            if len(options) < 2:
-                print("Usage: field remove <name>")
-                return
-            name = options[1]
-            success = self.db.deactivate_field(name)
-            if success:
-                print(f"Field '{name}' deactivated. History is preserved.")
-                self.logger.log(f"Field deactivated: {name}")
-            else:
-                print(f"No active field named '{name}' found.")
-
-        elif sub == "list":
-            fields = self.db.get_active_fields()
-            if not fields:
-                print("No active fields. Use 'field add <category> <name>' to add one.")
-                return
-            current_cat = None
-            for field_name, category_name, unit in fields:
-                if category_name != current_cat:
-                    unit_str = f" [{unit}]" if unit != "$" else ""
-                    print(f"\n  {cat_label(category_name)}{unit_str}")
-                    current_cat = category_name
-                print(f"    - {field_name}")
-            print()
-
-        elif sub == "set":
-            if len(options) != 4:
-                print("Usage: field set <category> unit <unit>")
-                return
-            category, prop, value = options[1], options[2], options[3]
-            if prop == "unit":
-                success = self.db.set_category_unit(category, value)
-                
-            else:
-                print(f"Unknown property '{prop}'. Supported: unit")
-
-        else:
-            print(f"Unknown subcommand '{sub}'. Use: add, remove, list, set")
 
     def cmd_update(self, options: list):
 
@@ -189,7 +162,7 @@ class CLI:
         else:
             print("Usage: update | update <field_name> <value>")
 
-    def commit(self, options: list):
+    def cmd_commit(self, options: list):
 
 
         if not options: # user just typed `commit`, we will take this as a batch process
@@ -347,22 +320,38 @@ class CLI:
 
     def cmd_commodity(self, options: list):
         self.need_print = False
-        VALID_SYMBOLS = set(PriceFetcher.SYMBOL_TO_TICKER.keys())
+
+        # TODO: Need to refactor this function. It is looking haggard
 
         if not options:
-            print("Usage: commodity tag <field> <symbol> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity refresh")
+            print("Usage: commodity tag <field> <commodity> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity refresh")
             return
 
         sub = options[0]
 
         if sub == "tag":
             if len(options) < 3:
-                print("Usage: commodity tag <field> <symbol>")
-                print(f"  Supported symbols: {', '.join(sorted(VALID_SYMBOLS))}")
+                # print("Usage: commodity tag <field> <commodity>")
+                # print(f"  Names:   {', '.join(sorted(PriceFetcher.NAME_TO_SYMBOL.keys()))}")
+                # print(f"  Symbols: {', '.join(sorted(PriceFetcher.SYMBOL_TO_TICKER.keys()))}")
+
+                # TODO:
+                # Need to think about how to apply a commodity to an entire category
+                # This will be useful for the user and can avoid the awkward command of
+                # commodity tag gold gold
+                # instead the user should be able to type in commodity tag metals
+                # and if metals is a category in storage
+                # We will attempt to commodify all of them
+
+
+
                 return
-            field_name, symbol = options[1], options[2].upper()
-            if symbol not in VALID_SYMBOLS:
-                print(f"Unknown symbol '{symbol}'. Supported: {', '.join(sorted(VALID_SYMBOLS))}")
+            field_name = options[1]
+            symbol = PriceFetcher.resolve_symbol(options[2])
+            if symbol is None:
+                print(f"Unknown commodity '{options[2]}'.")
+                print(f"  Names:   {', '.join(sorted(PriceFetcher.NAME_TO_SYMBOL.keys()))}")
+                print(f"  Symbols: {', '.join(sorted(PriceFetcher.SYMBOL_TO_TICKER.keys()))}")
                 return
             success = self.db.set_commodity(field_name, symbol)
             if success:
@@ -458,7 +447,7 @@ class CLI:
 
     summary                       Net worth snapshot (assets minus debts)
 
-    commodity tag <field> <symbol>        Tag a field as tracking a commodity (XAU, XAG, XPT, XPD)
+    commodity tag <field> <commodity>     Tag a field as a commodity (e.g. 'gold' or 'XAU')
     commodity untag <field>               Remove commodity tag from a field
     commodity override <field> <price>    Lock a manual price per unit for this field
     commodity override <field> clear      Remove price lock (use live/cached price)

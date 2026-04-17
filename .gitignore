@@ -13,3 +13,9 @@ dist/
 
 # Logs
 logs/
+
+# Claude
+.claude/
+
+# Databases
+*.db

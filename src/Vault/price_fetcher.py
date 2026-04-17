@@ -13,11 +13,62 @@ class PriceFetcher:
     """
 
     SYMBOL_TO_TICKER = {
-        "XAU": "GC=F",   # Gold futures (USD / troy oz)
-        "XAG": "SI=F",   # Silver futures (USD / troy oz)
-        "XPT": "PL=F",   # Platinum futures (USD / troy oz)
-        "XPD": "PA=F",   # Palladium futures (USD / troy oz)
+        # Precious metals (USD / troy oz)
+        "XAU": "GC=F",
+        "XAG": "SI=F",
+        "XPT": "PL=F",
+        "XPD": "PA=F",
+        # Base metals
+        "HG":  "HG=F",   # Copper futures (USD / lb)
+        # Energy
+        "CL":  "CL=F",   # WTI Crude Oil futures (USD / barrel)
+        "BZ":  "BZ=F",   # Brent Crude futures (USD / barrel)
+        "NG":  "NG=F",   # Natural Gas futures (USD / MMBtu)
+        # Agricultural
+        "ZW":  "ZW=F",   # Wheat futures (USD / bushel)
+        "ZC":  "ZC=F",   # Corn futures (USD / bushel)
+        "ZS":  "ZS=F",   # Soybean futures (USD / bushel)
+        "KC":  "KC=F",   # Coffee futures (USD / lb)
+        "SB":  "SB=F",   # Sugar futures (USD / lb)
+        "CC":  "CC=F",   # Cocoa futures (USD / metric ton)
+        "CT":  "CT=F",   # Cotton futures (USD / lb)
     }
+
+    NAME_TO_SYMBOL = {
+        # Precious metals
+        "gold":         "XAU",
+        "silver":       "XAG",
+        "platinum":     "XPT",
+        "palladium":    "XPD",
+        # Base metals
+        "copper":       "HG",
+        # Energy
+        "oil":          "CL",
+        "crude oil":    "CL",
+        "wti":          "CL",
+        "brent":        "BZ",
+        "natural gas":  "NG",
+        # Agricultural
+        "wheat":        "ZW",
+        "corn":         "ZC",
+        "soybeans":     "ZS",
+        "soybean":      "ZS",
+        "coffee":       "KC",
+        "sugar":        "SB",
+        "cocoa":        "CC",
+        "cotton":       "CT",
+    }
+
+    @classmethod
+    def resolve_symbol(cls, raw: str) -> str | None:
+        """Resolve a friendly name or symbol to a canonical symbol, or None if unrecognized."""
+        key = raw.lower()
+        if key in cls.NAME_TO_SYMBOL:
+            return cls.NAME_TO_SYMBOL[key]
+        upper = raw.upper()
+        if upper in cls.SYMBOL_TO_TICKER:
+            return upper
+        return None
 
     def __init__(self, db, logger):
         self.db = db
@@ -41,7 +92,7 @@ class PriceFetcher:
         # Build field_id → meta map and collect unique symbols
         symbols_needed: set[str] = set()
         for field_id, field_name, symbol, override_price, cached_price, cached_at in commodity_fields:
-            self._field_meta[field_id] = (override_price, cached_price)
+            self._field_meta[field_id] = (symbol, override_price, cached_price)
             if override_price is None:
                 symbols_needed.add(symbol)
 
@@ -58,7 +109,7 @@ class PriceFetcher:
             if symbol in fetched:
                 self.db.update_cached_price(field_id, fetched[symbol], now)
                 # Refresh cached value in meta
-                self._field_meta[field_id] = (override_price, fetched[symbol])
+                self._field_meta[field_id] = (symbol, override_price, fetched[symbol])
 
         self._prices = fetched
 
@@ -75,18 +126,14 @@ class PriceFetcher:
             # Field is not tagged as a commodity
             return None
 
-        override_price, cached_price = meta
+        symbol, override_price, cached_price = meta
 
         if override_price is not None:
             return override_price
 
-        # Check live price from this session's fetch
-        commodity_fields = self.db.get_commodity_fields()
-        symbol = next((sym for fid, _, sym, _, _, _ in commodity_fields if fid == field_id), None)
-        if symbol and symbol in self._prices:
+        if symbol in self._prices:
             return self._prices[symbol]
 
-        # Fall back to DB-cached price
         if cached_price is not None:
             return cached_price
 

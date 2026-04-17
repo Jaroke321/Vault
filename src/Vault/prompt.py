@@ -18,11 +18,11 @@ class Prompt:
                 
             if command is not None:
                 command(options)
+                
 
             if(self.state_data_viewer):
                 self.state_data_viewer()
 
-            # Get next command
             command_input = input("Vault/>")
 
         print("Exiting Vault...")
@@ -30,8 +30,10 @@ class Prompt:
     def validate_command(self, command: str):
 
         cmdlets = command.split(" ")
-        for k, v in self.cmd_dict.items():
-            if cmdlets[0] == k:
-                return v, cmdlets[1:]
 
+        cmd_actual = self.cmd_dict.get(cmdlets[0])
+        if cmd_actual is not None:
+            return cmd_actual, cmdlets[1:]
+
+        print(f"Unknown command '{cmdlets[0]}'. Type 'help' to see available commands.")
         return None, None

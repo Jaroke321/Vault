@@ -1,0 +1,107 @@
+from .base import BaseCommand
+
+class FieldCommand(BaseCommand):
+
+    call_str = "field"
+
+    def __init__(self, db, logger, price_fetcher=None):
+
+        super().__init__(db, logger, price_fetcher)
+
+        # Dynamically build subcommand dispatch table from methods prefixed with "sub_".
+        # Adding a new subcommand only requires defining a sub_<name> method — no manual registration needed.
+        self.sub_commands = {
+            name.removeprefix("sub_"): getattr(self, name)  # strip prefix to get the user-facing command name
+            for name in dir(self)
+            if name.startswith("sub_")
+        }
+
+
+    def entry_point(self, options: list):
+
+        # Error handling
+        if not options:
+            print("Usage: field <subcommand>")
+            print(f"  Subcommands: {', '.join(self.sub_commands.keys())}") 
+            return
+        
+        # Business logic
+        sub = options[0]
+        if sub in self.sub_commands:
+            self.sub_commands[sub](options[1:])
+        else:
+            print(f"Unknown sub command: {sub}")
+
+    def init_command(self) -> dict:
+
+        return {self.call_str: self.entry_point}
+    
+    ####################################
+    # Sub-commands
+    ####################################
+    def sub_add(self, options: list):
+        
+        # Error checking
+        if len(options) < 2:
+            print("Usage: field add <category> <name>")
+            return
+        category, name = options[0], options[1]
+        if " " in name or " " in category:
+            print("Field and category names cannot contain spaces.")
+            return
+        
+        # Business logic
+        success = self.db.add_field(name, category)
+        if success:
+            print(f"Field '{name}' added under category '{category}'.")
+            self.logger.log(f"Field added: {name} (category: {category})")
+        else:
+            print(f"Field '{name}' already exists.")
+
+    def sub_remove(self, options: list):
+
+        # Error checking
+        if len(options) < 1:
+            print("Usage: field remove <name>")
+            return
+        
+        # Business logic
+        name = options[0]
+        success = self.db.deactivate_field(name)
+        if success:
+            print(f"Field '{name}' deactivated. History is preserved.")
+            self.logger.log(f"Field deactivated: {name}")
+        else:
+            print(f"No active field named '{name}' found.")
+
+    def sub_list(self, options: list):
+        
+        # Error checking
+        fields = self.db.get_active_fields()
+        if not fields:
+            print("No active fields. Use 'field add <category> <name>' to add one.")
+            return
+        
+        # Business logic
+        current_cat = None
+        for field_name, category_name, unit in fields:
+            if category_name != current_cat:
+                unit_str = f" [{unit}]" if unit != "$" else ""
+                print(f"\n  {self.cat_label(category_name)}{unit_str}")
+                current_cat = category_name
+            print(f"    - {field_name}")
+        print()
+
+    def sub_set(self, options: list):
+        
+        # Error Checking
+        if len(options) != 3:
+            print("Usage: field set <category> unit <unit>")
+            return
+        
+        # Business logic
+        category, prop, value = options[0], options[1], options[2]
+        if prop == "unit":
+            success = self.db.set_category_unit(category, value)
+        else:
+            print(f"Unknown property '{prop}'. Supported: unit")

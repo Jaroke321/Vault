@@ -5,9 +5,11 @@ from pathlib import Path
 
 class DBHandler:
 
-    def __init__(self):
-        base_dir = Path(__file__).resolve().parent.parent.parent
-        self.db_path = base_dir / "vault.db"
+    def __init__(self, db_path: Path | None = None):
+        if db_path is None:
+            base_dir = Path(__file__).resolve().parent.parent.parent
+            db_path = base_dir / "vault.db"
+        self.db_path = db_path
         self.init_db()
 
     def init_db(self):
