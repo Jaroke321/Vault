@@ -10,7 +10,7 @@ class Prompt:
 
     def render(self):
 
-        command_input = input("Vault/>")
+        command_input = input(f"{self.project_name}/>")
 
         while command_input not in ["exit", "quit", "q"]:
 
@@ -18,12 +18,19 @@ class Prompt:
                 
             if command is not None:
                 command(options)
-                
+
+                # it might be cool to be able to handle return values from the called function
+                # This would be relevant since the command classes are calling an entry point functin
+                # Right now the entry point function handles its own sub commands
+                # But what if the entry point can return back a dict with sub commands
+                # and then sub commands can return back more dicts with sub commands
+                # could potentially allow for more complex and dynamic decision trees
+
 
             if(self.state_data_viewer):
                 self.state_data_viewer()
 
-            command_input = input("Vault/>")
+            command_input = input(f"{self.project_name}/>")
 
         print("Exiting Vault...")
 

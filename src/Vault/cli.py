@@ -1,5 +1,7 @@
+import argparse
 import datetime
 import time
+from pathlib import Path
 from rich.progress import track
 
 # Extra imports of useful things
@@ -12,36 +14,48 @@ from .helper import *
 # Command classes
 from .commands import FieldCommand
 
-#TODO:
-# This big todo is that I want to split all functions / commands into classes
-# I want to update the prompt class to handle commands and subcommands without breaking our current use case
-# Each class will follow a teamplate and will have an entry command and then sub commands as methods
-# Will need to think how this changes prompt class
-# Will also neeed to think through how this effects current state data since everything up until this point
-# has been in the CLI class
-
 def main():
+    parser = argparse.ArgumentParser(prog="vault")
+    parser.add_argument("--test", action="store_true", help="Launch interactive test mode with in-memory dummy data")
+    args = parser.parse_args()
+
     logger = Logger(log_file="logs/Vault.log")
-    db = DBHandler()
-    fetcher = PriceFetcher(db, logger)
-    fetcher.fetch_all()
-    CLI(logger, db, fetcher).run()
+
+    if args.test:
+        import os, tempfile
+        from .test_data import seed_test_db
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        tmp_path = Path(tmp.name)
+        try:
+            db = DBHandler(db_path=tmp_path)
+            seed_test_db(db)
+            CLI(logger, db, price_fetcher=None, test_mode=True).run()
+        finally:
+            os.unlink(tmp_path)
+    else:
+        db = DBHandler()
+        fetcher = PriceFetcher(db, logger)
+        fetcher.fetch_all()
+        CLI(logger, db, fetcher).run()
 
 
 class CLI:
     """Implementation class for the Vault finance tracker. Records monthly financial
     snapshots across user-defined fields organized into categories."""
 
-    def __init__(self, logger, db=None, price_fetcher=None):
+    def __init__(self, logger, db=None, price_fetcher=None, test_mode=False):
 
         self.logger = logger
         self.db = db if db is not None else DBHandler()
         self.price_fetcher = price_fetcher
+        self.test_mode = test_mode
+        self.project_name = "[TEST] Vault" if test_mode else "Vault"
         self.commits = []
         self.need_print = True
 
         # Need to init classes before using
-        command_class_list = [FieldCommand]
+        command_class_list = [ FieldCommand ]
         self.command_classes = self.load_command_classes(command_class_list)
 
         # Handle any command calls available to the user that is not in its own command class
@@ -63,7 +77,9 @@ class CLI:
 
     def run(self):
         print_banner()
-        prompt = Prompt(project_name="Vault", logger=self.logger, state_data_viewer=self.commit_viewer, cmd_dict=self.commands)
+        if self.test_mode:
+            print(f"{BOLD}{YELLOW}  *** TEST MODE — in-memory database, no changes will be saved ***{RESET}\n")
+        prompt = Prompt(project_name=self.project_name, logger=self.logger, state_data_viewer=self.commit_viewer, cmd_dict=self.commands)
         prompt.render()
 
     # ------------------------------------------------------------------
