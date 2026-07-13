@@ -9,6 +9,7 @@ Vault helps you manage financial fields across categories (e.g. savings, investm
 ## Requirements
 
 - Python >= 3.14
+- [uv](https://github.com/astral-sh/uv) (recommended for local development)
 
 ## Setup
 
