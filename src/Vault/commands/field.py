@@ -4,19 +4,6 @@ class FieldCommand(BaseCommand):
 
     call_str = "field" # Tells the prompt the string command in order to call this class
 
-    def __init__(self, db, logger, price_fetcher=None):
-
-        super().__init__(db, logger, price_fetcher)
-
-        # Dynamically build subcommand dispatch table from methods prefixed with "sub_".
-        # Adding a new subcommand only requires defining a sub_<name> method — no manual registration needed.
-        self.sub_commands = {
-            name.removeprefix("sub_"): getattr(self, name)  # strip prefix to get the user-facing command name
-            for name in dir(self)
-            if name.startswith("sub_")
-        }
-
-
     def entry_point(self, options: list):
         """Function call that prompt will made when user enters in the call_str. This function is responsible for
         directing input to the correct sub commands of this class."""

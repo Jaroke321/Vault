@@ -17,10 +17,17 @@ class BaseCommand(ABC):
     BLACK, RED, GREEN, YELLOW = BLACK, RED, GREEN, YELLOW
     BLUE, MAGENTA, CYAN, WHITE = BLUE, MAGENTA, CYAN, WHITE
 
-    def __init__(self, db, logger, price_fetcher=None):
+    def __init__(self, db, logger, price_fetcher=None, commits=None):
         self.db = db
         self.logger = logger
         self.price_fetcher = price_fetcher
+        self.commits = commits
+        
+        self.sub_commands = {
+            name.removeprefix("sub_"): getattr(self, name)
+            for name in dir(self)
+            if name.startswith("sub_")
+        }
 
     @property
     @abstractmethod

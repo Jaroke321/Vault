@@ -16,6 +16,7 @@ logs/
 
 # Claude
 .claude/
+.cursor/
 
 # Databases
 *.db

@@ -12,7 +12,7 @@ from .price_fetcher import PriceFetcher
 from .helper import *
 
 # Command classes
-from .commands import FieldCommand
+from .commands import FieldCommand, UpdateCommand, CommitCommand
 
 def main():
     parser = argparse.ArgumentParser(prog="vault")
@@ -55,15 +55,13 @@ class CLI:
         self.need_print = True
 
         # Need to init classes before using
-        command_class_list = [ FieldCommand ]
+        command_class_list = [ FieldCommand, UpdateCommand, CommitCommand]
         self.command_classes = self.load_command_classes(command_class_list)
 
         # Handle any command calls available to the user that is not in its own command class
         # This will allow the user to call the key value and the prompt will then pass any options
         # to the function tied to that command
         self.commands = {
-            "update":    self.cmd_update,
-            "commit":    self.cmd_commit,
             "show":      self.cmd_show,
             "summary":   self.cmd_summary,
             "commodity": self.cmd_commodity,
@@ -72,8 +70,6 @@ class CLI:
 
         # add command class entry points to the commands list
         self.commands |= self.command_classes
-
-        #TODO: Need to add in command line arguments for more usability
 
     def run(self):
         print_banner()
@@ -91,7 +87,7 @@ class CLI:
         commands = {}
 
         for cls in command_class_list:
-            instance = cls(self.db, self.logger, self.price_fetcher)
+            instance = cls(self.db, self.logger, self.price_fetcher, self.commits)
             commands.update(instance.init_command())
 
         return commands
@@ -120,95 +116,6 @@ class CLI:
             colored_num = f"{BOLD}{MAGENTA}{row[0]}{RESET}"
             line = line.replace(row[0], colored_num, 1)
             print(line)
-
-    def cmd_update(self, options: list):
-
-        current_month = datetime.datetime.now().strftime("%Y-%m")
-
-        if not options:
-            fields = self.db.get_active_fields()
-            if not fields:
-                print("No active fields to log. Use 'field add' first.")
-                return
-            print(f"Updating values for {current_month}. Press Enter to skip a field.")
-            recorded = 0
-            for field_name, category_name, unit in fields:
-                raw = input(f"  {category_name}/{field_name}: ").strip()
-                if raw == "":
-                    continue
-                value = self._parse_float(raw)
-                if value is None:
-                    print(f"    Skipping '{field_name}': '{raw}' is not a valid number.")
-                    continue
-                # self.db.record_value(field_name, current_month, value)
-                self.commits.append([field_name, current_month, value, "value"])
-                recorded += 1
-                if category_name.lower() == "debt":
-                    raw_asset = input(
-                        f"    {field_name} asset value (press Enter to skip): "
-                    ).strip()
-                    if raw_asset != "":
-                        asset_value = self._parse_float(raw_asset)
-                        if asset_value is None:
-                            print(f"    Skipping asset value for '{field_name}': '{raw_asset}' is not a valid number.")
-                        else:
-                            # self.db.record_asset_value(field_name, current_month, asset_value)
-                            self.commits.append([field_name, current_month, asset_value, "asset"])
-            print(f"Updated {recorded} value(s) for {current_month}.")
-            self.logger.log(f"Interactive update: {recorded} value(s) recorded for {current_month}")
-
-        elif len(options) >= 2:
-            field_name, raw = options[0], options[1]
-            value = self._parse_float(raw)
-            if value is None:
-                print(f"Invalid value '{raw}'. Must be a number.")
-                return
-            # success = self.db.record_value(field_name, current_month, value)
-            self.commits.append([field_name, current_month, value, "value"])
-            
-            if len(options) >= 3:
-                asset_value = self._parse_float(options[2])
-                if asset_value is None:
-                    print(f"Invalid asset value '{options[2]}'. Must be a number.")
-                else:
-                    # asset_success = self.db.record_asset_value(field_name, current_month, asset_value)
-                    self.commits.append([field_name, current_month, asset_value, "asset"])
-                    
-
-        else:
-            print("Usage: update | update <field_name> <value>")
-
-    def cmd_commit(self, options: list):
-
-
-        if not options: # user just typed `commit`, we will take this as a batch process
-            self._commit_all()
-            return
-
-        unique_options = set(options)
-        successful_commits = []
-
-        for commit_str in track(unique_options, description="Commiting Changes..."):
-            time.sleep(0.5)
-
-            try:
-                commit_num = int(commit_str)
-
-                if(commit_num > 0 and commit_num <= len(self.commits)):
-                    current_commit = self.commits[commit_num-1]
-                    if current_commit[-1] == "value":
-                        self.db.record_value(current_commit[0], current_commit[1], current_commit[2])
-                    else:
-                        self.db.record_asset_value(current_commit[0], current_commit[1], current_commit[2])
-
-                    successful_commits.append(commit_num-1)
-                    
-            except ValueError:
-                pass
-
-        # Remove from list everything we just commited
-        for i in sorted(successful_commits, reverse=True):
-            self.commits.pop(i)
 
     def cmd_show(self, options: list):
         self.need_print = False
@@ -548,18 +455,6 @@ class CLI:
             print(f"  {month:<10}  {val_str:>17}  {delta_str_color:>17}")
             prev_value = value
         print()
-
-    def _commit_all(self):
-
-        for current_commit in track(self.commits, description="Commiting Changes..."):
-            time.sleep(0.5)
-            if(current_commit[-1] == "value"):
-                self.db.record_value(current_commit[0], current_commit[1], current_commit[2])
-            elif(current_commit[-1] == "asset"):
-                self.db.record_asset_value(current_commit[0], current_commit[1], current_commit[2])
-
-        self.commits.clear()
-
 
 if __name__ == "__main__":
     main()
