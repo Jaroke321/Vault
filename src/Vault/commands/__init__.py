@@ -2,3 +2,5 @@ from .field import FieldCommand
 from .update import UpdateCommand
 from .commit import CommitCommand
 from .summary import SummaryCommand
+from .show import ShowCommand
+from .help import HelpCommand
