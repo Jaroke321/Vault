@@ -9,6 +9,7 @@ from .prompt import Prompt
 from .logger import Logger
 from .db_handler import DBHandler
 from .price_fetcher import PriceFetcher
+from .pending_commits import PendingCommits
 from .helper import *
 
 # Command classes
@@ -51,8 +52,7 @@ class CLI:
         self.price_fetcher = price_fetcher
         self.test_mode = test_mode
         self.project_name = "[TEST] Vault" if test_mode else "Vault"
-        self.commits = []
-        self.need_print = True
+        self.pending_commits = PendingCommits()
 
         # Need to init classes before using
         command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand]
@@ -74,7 +74,7 @@ class CLI:
         print_banner()
         if self.test_mode:
             print(f"{BOLD}{YELLOW}  *** TEST MODE — in-memory database, no changes will be saved ***{RESET}\n")
-        prompt = Prompt(project_name=self.project_name, logger=self.logger, state_data_viewer=self.commit_viewer, cmd_dict=self.commands)
+        prompt = Prompt(project_name=self.project_name, logger=self.logger, state_data_viewer=self.pending_commits.render, cmd_dict=self.commands)
         prompt.render()
 
     # ------------------------------------------------------------------
@@ -86,50 +86,25 @@ class CLI:
         commands = {}
 
         for cls in command_class_list:
-            instance = cls(self.db, self.logger, self.price_fetcher, self.commits)
+            instance = cls(self.db, self.logger, self.price_fetcher, self.pending_commits)
             for name, entry_point in instance.init_command().items():
                 commands[name] = self._wrap_entry_point(entry_point, instance)
 
         return commands
 
     def _wrap_entry_point(self, entry_point, instance):
-        """Wrap a command class's entry point so CLI's need_print flag stays in sync with
-        whether that command mutates the shared pending-commits list."""
+        """Wrap a command class's entry point so the pending-commits table stays in sync
+        with whether that command mutates the shared pending-commits list."""
 
         def wrapped(options):
             entry_point(options)
             if not instance.mutates_commits:
-                self.need_print = False
+                self.pending_commits.suppress_next_render()
 
         return wrapped
 
-
-    def commit_viewer(self):
-        if not self.commits or self.need_print == False:
-            self.need_print = True
-            return
-
-        headers = ["#", "Field", "Month", "Value"]
-        rows = [[str(i), c[0], c[1], str(c[2])] for i, c in enumerate(self.commits, start=1)]
-
-        widths = [len(h) for h in headers]
-        for row in rows:
-            for j, cell in enumerate(row):
-                widths[j] = max(widths[j], len(cell))
-
-        fmt = "  " + "  ".join(f"{{:<{w}}}" for w in widths)
-        sep = "  " + "  ".join("-" * w for w in widths)
-
-        print(fmt.format(*headers))
-        print(sep)
-        for row in rows:
-            line = fmt.format(*row)
-            colored_num = f"{BOLD}{MAGENTA}{row[0]}{RESET}"
-            line = line.replace(row[0], colored_num, 1)
-            print(line)
-
     def cmd_show(self, options: list):
-        self.need_print = False
+        self.pending_commits.suppress_next_render()
 
         num_months = 6     # default value for trend data
 
@@ -189,7 +164,7 @@ class CLI:
             print(f"Too many options given to the show command.")
 
     def cmd_commodity(self, options: list):
-        self.need_print = False
+        self.pending_commits.suppress_next_render()
 
         # TODO: Need to refactor this function. It is looking haggard
 
@@ -294,7 +269,7 @@ class CLI:
             print(f"Unknown subcommand '{sub}'. Use: tag, untag, override, list, refresh")
 
     def cmd_help(self, options: list):
-        self.need_print = False
+        self.pending_commits.suppress_next_render()
 
         print("""
   Vault Commands:
