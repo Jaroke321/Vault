@@ -13,7 +13,7 @@ from .pending_commits import PendingCommits
 from .helper import *
 
 # Command classes
-from .commands import FieldCommand, UpdateCommand, CommitCommand, SummaryCommand
+from .commands import FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, HelpCommand
 
 def main():
     parser = argparse.ArgumentParser(prog="vault")
@@ -55,16 +55,14 @@ class CLI:
         self.pending_commits = PendingCommits()
 
         # Need to init classes before using
-        command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand]
+        command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, HelpCommand]
         self.command_classes = self.load_command_classes(command_class_list)
 
         # Handle any command calls available to the user that is not in its own command class
         # This will allow the user to call the key value and the prompt will then pass any options
         # to the function tied to that command
         self.commands = {
-            "show":      self.cmd_show,
             "commodity": self.cmd_commodity,
-            "help":      self.cmd_help,
         }
 
         # add command class entry points to the commands list
@@ -102,66 +100,6 @@ class CLI:
                 self.pending_commits.suppress_next_render()
 
         return wrapped
-
-    def cmd_show(self, options: list):
-        self.pending_commits.suppress_next_render()
-
-        num_months = 6     # default value for trend data
-
-        if not options:    # User just said to show all data (i.e `show`)
-            month_list, active_fields, data = self.db.get_history(months=num_months)
-            if not month_list:
-                print("No snapshots recorded yet.")
-                return
-            self._print_table(month_list, active_fields, data)
-
-        elif len(options) == 1: # User either inputed a field / category name or a number ( i.e. show 12 || show savings )
-            # Cover case where user is inputing months
-            num_months = self._parse_int(options[0])
-            if num_months:
-
-                month_list, active_fields, data = self.db.get_history(months=num_months)
-                if month_list:
-                    self._print_table(month_list, active_fields, data)
-
-            elif self._is_a_field_name(options[0]):   
-                # Try case where user is looking for a field or category
-                field_name = options[0]
-                num_months = 6
-                rows = self.db.get_history(field_name=field_name, months=num_months)
-                unit = self.db.get_field_unit(field_name)
-                self._print_field_trend(field_name, rows, unit)
-
-            elif self._is_a_category_name(options[0]):
-                # try case where user is inputing an entire category
-                cat_name = options[0]
-                num_months = 6
-                field_list = self.db.get_fields_by_category(category_name=cat_name)
-
-                for field in field_list:
-                    rows = self.db.get_history(field_name=field, months=num_months)
-                    unit = self.db.get_field_unit(field)
-                    self._print_field_trend(field, rows, unit)
-
-            else:
-                print(f"Couldnt find any record for the value {options[0]}")
-
-        elif len(options) == 2: # User entered in field and months i.e. `show debt 9`
-
-            field_name = options[0]
-
-            num_months = self._parse_int(options[1])
-            if num_months:
-
-                rows = self.db.get_history(field_name=field_name, months=num_months)
-                if not rows:
-                    print(f"No history found for field '{field_name}'.")
-                    return
-                unit = self.db.get_field_unit(field_name)
-                self._print_field_trend(field_name, rows, unit)
-
-        else:
-            print(f"Too many options given to the show command.")
 
     def cmd_commodity(self, options: list):
         self.pending_commits.suppress_next_render()
@@ -268,51 +206,9 @@ class CLI:
         else:
             print(f"Unknown subcommand '{sub}'. Use: tag, untag, override, list, refresh")
 
-    def cmd_help(self, options: list):
-        self.pending_commits.suppress_next_render()
-
-        print("""
-  Vault Commands:
-    field add <category> <name>          Register a new tracked field
-    field remove <name>                  Deactivate a field (history preserved)
-    field list                           Show all active fields by category
-    field set <category> unit <unit>     Set display unit for a category (default: $)
-
-    update                               Interactively stage values for all fields this month
-    update <field> <value>               Stage a value for a single field
-    update <field> <value> <asset>       Stage a value + asset value for a debt field
-
-    commit                        Commit all pending staged updates to the database
-    commit <n> [n ...]            Commit one or more pending updates by index
-
-    show                          Table of last 6 months across all fields
-    show <n>                      Table of last N months across all fields
-    show <field>                  Month-over-month trend for one field
-    show <field> <n>              Trend for one field over last N months
-
-    summary                       Net worth snapshot (assets minus debts)
-
-    commodity tag <field> <commodity>     Tag a field as a commodity (e.g. 'gold' or 'XAU')
-    commodity untag <field>               Remove commodity tag from a field
-    commodity override <field> <price>    Lock a manual price per unit for this field
-    commodity override <field> clear      Remove price lock (use live/cached price)
-    commodity list                        Show all tagged fields with current prices and source
-    commodity refresh                     Re-fetch live prices for all tagged fields
-
-    help                          Show this help message
-    exit / quit / q               Exit Vault
-        """)
-
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
-
-    def _parse_int(self, raw:str):
-        try:
-            cleaned = raw.replace("$", "").replace(",", "").strip()
-            return int(cleaned)
-        except ValueError:
-            return None
 
     def _parse_float(self, raw: str):
         try:
@@ -320,63 +216,6 @@ class CLI:
             return float(cleaned)
         except ValueError:
             return None
-        
-    def _is_a_field_name(self, raw: str):
-        all_fields = [f for f, c, u in self.db.get_active_fields()]
-
-        if raw.lower() in all_fields:
-            return True
-        return False
-
-    def _is_a_category_name(self, raw: str):
-        all_cats = self.db.get_categories()
-
-        if raw.lower() in all_cats:
-            return True
-        return False
-
-    def _print_table(self, month_list, active_fields, data):
-        COL_W = 14
-        NAME_W = 22
-
-        header = f"\n  {'Field':<{NAME_W}}"
-        for month in month_list:
-            header += f"  {month:>{COL_W}}"
-        print(header)
-        print("  " + "-" * (NAME_W + (COL_W + 2) * len(month_list)))
-
-        current_cat = None
-        for field_name, category_name, unit in active_fields:
-            if category_name != current_cat:
-                print(f"\n  {cat_label(category_name)}")
-                current_cat = category_name
-            row = f"  {field_name:<{NAME_W}}"
-            for month in month_list:
-                val = data.get(field_name, {}).get(month)
-                cell = format_value(val, unit) if val is not None else "--"
-                row += f"  {cell:>{COL_W}}"
-            print(row)
-        print()
-
-    def _print_field_trend(self, field_name, rows, unit: str = "$"):
-        print(f"\n  Trend for '{field_name}':")
-        print(f"  {'Month':<10}  {'Value':>17}  {'Delta':>17}")
-        print("  " + "-" * 50)
-
-        prev_value = None
-        for month, value in rows:
-            val_str = format_value(value, unit)
-            if prev_value is None:
-                delta_str_color = "--"
-            else:
-                delta = value - prev_value
-                sign = "+" if delta >= 0 else ""
-                delta_str = f"{sign}{format_value(abs(delta), unit)}"
-                color = GREEN if delta >= 0 else RED
-                delta_str_color = cat_label(delta_str, color)
-            print(f"  {month:<10}  {val_str:>17}  {delta_str_color:>17}")
-            prev_value = value
-        print()
 
 if __name__ == "__main__":
     main()
