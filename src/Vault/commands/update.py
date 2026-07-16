@@ -4,6 +4,7 @@ import datetime
 class UpdateCommand(BaseCommand):
 
     call_str = "update" # Tells the prompt the string command in order to call this class
+    mutates_commits = True
 
     def entry_point(self, options: list):
         """Function call that prompt will made when user enters in the call_str. This function is responsible for

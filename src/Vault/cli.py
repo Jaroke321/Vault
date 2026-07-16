@@ -12,7 +12,7 @@ from .price_fetcher import PriceFetcher
 from .helper import *
 
 # Command classes
-from .commands import FieldCommand, UpdateCommand, CommitCommand
+from .commands import FieldCommand, UpdateCommand, CommitCommand, SummaryCommand
 
 def main():
     parser = argparse.ArgumentParser(prog="vault")
@@ -55,7 +55,7 @@ class CLI:
         self.need_print = True
 
         # Need to init classes before using
-        command_class_list = [ FieldCommand, UpdateCommand, CommitCommand]
+        command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand]
         self.command_classes = self.load_command_classes(command_class_list)
 
         # Handle any command calls available to the user that is not in its own command class
@@ -63,7 +63,6 @@ class CLI:
         # to the function tied to that command
         self.commands = {
             "show":      self.cmd_show,
-            "summary":   self.cmd_summary,
             "commodity": self.cmd_commodity,
             "help":      self.cmd_help,
         }
@@ -88,9 +87,21 @@ class CLI:
 
         for cls in command_class_list:
             instance = cls(self.db, self.logger, self.price_fetcher, self.commits)
-            commands.update(instance.init_command())
+            for name, entry_point in instance.init_command().items():
+                commands[name] = self._wrap_entry_point(entry_point, instance)
 
         return commands
+
+    def _wrap_entry_point(self, entry_point, instance):
+        """Wrap a command class's entry point so CLI's need_print flag stays in sync with
+        whether that command mutates the shared pending-commits list."""
+
+        def wrapped(options):
+            entry_point(options)
+            if not instance.mutates_commits:
+                self.need_print = False
+
+        return wrapped
 
 
     def commit_viewer(self):
@@ -176,70 +187,6 @@ class CLI:
 
         else:
             print(f"Too many options given to the show command.")
-
-    def cmd_summary(self, options: list):
-        self.need_print = False
-
-        rows = self.db.get_latest_values()
-        if not rows:
-            print("No data recorded yet.")
-            return
-
-        DEBT_CATEGORIES = {"debt"}
-        MONETARY_UNITS = {"$", "€", "£", "¥"}
-
-        assets = 0.0
-        liabilities = 0.0
-        current_cat = None
-
-        print("\n  === Net Worth Summary ===")
-
-        for field_name, category_name, unit, value, asset_value, field_id in rows:
-
-            if category_name != current_cat:
-                print(f"\n  {cat_label(category_name)}")
-                current_cat = category_name
-                
-            is_debt = category_name.lower() in DEBT_CATEGORIES
-            is_monetary = unit in MONETARY_UNITS
-
-            if is_debt and asset_value is not None:
-                equity = asset_value - value
-                liabilities += value
-                assets      += asset_value
-                print(f"    {field_name:<20} balance:  {format_value(value, unit):>16}  (liability)")
-                print(f"    {'':<20} value:    {format_value(asset_value, unit):>16}")
-                print(f"    {'':<20} equity:   {format_value(equity, unit):>16}")
-
-            elif is_debt:
-                print(f"    {field_name:<20} {format_value(value, unit):>16}  (liability)")
-                liabilities += value
-                    
-            elif is_monetary:
-                print(f"    {field_name:<20} {format_value(value, unit):>16}")
-                assets += value
-
-            elif self.price_fetcher is not None:
-                price = self.price_fetcher.get_price(field_id)
-
-                if price is not None:
-                    usd_equiv = value * price
-                    assets += usd_equiv
-                    print(f"    {field_name:<20} {format_value(value, unit):>10} ~ {format_value(usd_equiv, '$'):>12} (@{format_value(price, '$')}/{unit})")
-
-                else:
-                    print(f"    {field_name:<20} {format_value(value, unit):>10} (no price)")
-
-
-            else:
-                print(f"    {field_name:<20} {format_value(value, unit):>16}")
-            
-        net = assets - liabilities
-        print(f"\n  {'Assets:':<20} ${assets:>12,.2f}")
-        print(f"  {'Liabilities:':<20} ${liabilities:>12,.2f}")
-        print(f"  {'Net Worth:':<20} ${net:>12,.2f}")
-        print()
-        self.logger.log(f"Summary viewed: assets={assets:.2f}, liabilities={liabilities:.2f}, net={net:.2f}")
 
     def cmd_commodity(self, options: list):
         self.need_print = False

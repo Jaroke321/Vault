@@ -17,6 +17,10 @@ class BaseCommand(ABC):
     BLACK, RED, GREEN, YELLOW = BLACK, RED, GREEN, YELLOW
     BLUE, MAGENTA, CYAN, WHITE = BLUE, MAGENTA, CYAN, WHITE
 
+    # Whether this command mutates the shared pending-commits list. CLI uses this to
+    # decide whether the commits table should reprint after the command runs.
+    mutates_commits = False
+
     def __init__(self, db, logger, price_fetcher=None, commits=None):
         self.db = db
         self.logger = logger
