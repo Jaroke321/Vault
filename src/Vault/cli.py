@@ -114,9 +114,6 @@ class CLI:
 
         if sub == "tag":
             if len(options) < 3:
-                # print("Usage: commodity tag <field> <commodity>")
-                # print(f"  Names:   {', '.join(sorted(PriceFetcher.NAME_TO_SYMBOL.keys()))}")
-                # print(f"  Symbols: {', '.join(sorted(PriceFetcher.SYMBOL_TO_TICKER.keys()))}")
 
                 # TODO:
                 # Need to think about how to apply a commodity to an entire category
