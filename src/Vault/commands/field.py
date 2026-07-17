@@ -21,10 +21,6 @@ class FieldCommand(BaseCommand):
         else:
             print(f"Unknown sub command: {sub}")
 
-    def init_command(self) -> dict:
-
-        return {self.call_str: self.entry_point}
-    
     ####################################
     # Sub-commands
     ####################################

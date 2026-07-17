@@ -35,18 +35,26 @@ class BaseCommand(ABC):
 
     @property
     @abstractmethod
-    def call_str(self) -> str:
-        """The top-level command name used to register this class (e.g. 'field')."""
+    def call_str(self) -> str | list[str]:
+        """The top-level command name(s) used to register this class (e.g. 'field', or
+        ['help', 'h'] to register aliases)."""
+
+    @property
+    def call_strs(self) -> list[str]:
+        """call_str normalized to a list, regardless of whether a subclass declared a
+        single string or a list of aliases."""
+
+        return [self.call_str] if isinstance(self.call_str, str) else list(self.call_str)
 
     @abstractmethod
     def entry_point(self, options: dict):
         """Return {command_name: callable} for registration."""
 
-    @abstractmethod
     def init_command(self) -> dict:
-        """Return {command_name: entry_point} to register calling this class"""
+        """Return {command_name: entry_point} for each alias in call_strs, to register
+        calling this class."""
 
-        return {}
+        return {alias: self.entry_point for alias in self.call_strs}
 
 
     # ------------------------------------------------------------------

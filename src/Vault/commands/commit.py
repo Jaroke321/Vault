@@ -17,10 +17,6 @@ class CommitCommand(BaseCommand):
         else:                                                                                                                         
            self._commit_subset(options)
 
-    def init_command(self) -> dict:
-
-        return {self.call_str: self.entry_point}
-    
     ####################################
     # Sub-commands
     ####################################

@@ -67,7 +67,3 @@ class SummaryCommand(BaseCommand):
         print(f"  {'Net Worth:':<20} ${net:>12,.2f}")
         print()
         self.logger.log(f"Summary viewed: assets={assets:.2f}, liabilities={liabilities:.2f}, net={net:.2f}")
-
-    def init_command(self) -> dict:
-
-        return {self.call_str: self.entry_point}
