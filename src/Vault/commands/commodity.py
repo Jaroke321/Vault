@@ -11,7 +11,7 @@ class CommodityCommand(BaseCommand):
 
         # Error handling
         if not options:
-            print("Usage: commodity tag <field> <commodity> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity refresh")
+            self.usage()
             return
 
         # Business logic
@@ -24,6 +24,9 @@ class CommodityCommand(BaseCommand):
     def init_command(self) -> dict:
 
         return {self.call_str: self.entry_point}
+
+    def usage(self):
+        print("Usage: commodity tag <field> <commodity> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity refresh")
 
     ####################################
     # Sub-commands
