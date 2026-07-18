@@ -1,7 +1,7 @@
 ---
 name: draft-pr
 description: Open a Draft PR for the current branch. If a Notion task is in context (loaded via the notion-task skill, or recoverable from a task-<N> branch name), the PR description links and summarizes that task; otherwise the description is generated from the diff against the default branch. Use when the user says "open a draft PR", "create a draft PR", "draft PR for this branch", or similar.
-disable-model-invocation: true
+disable-model-invocation: false
 argument-hint: [notion-task-id]
 allowed-tools: Bash, mcp__claude_ai_Notion__notion-query-data-sources, mcp__claude_ai_Notion__notion-fetch, mcp__claude_ai_Notion__notion-search
 ---
@@ -14,9 +14,7 @@ task:
 - **No Notion task** → description is generated from `git diff`/`git log`
   against the default branch.
 
-This skill pushes the branch and opens a PR — both visible, hard-to-reverse
-actions. Always show the drafted title/body and get explicit confirmation
-before running `git push` or `gh pr create`.
+This skill pushes the branch and opens a PR — both visible, hard-to-reverse actions.
 
 ## Step 1 — Gather git state
 
@@ -143,9 +141,7 @@ Read the diff and commit log, then write:
 ## Step 6 — Confirm, then push and open the PR
 
 Show the user the exact title and body, plus what will happen: branch to
-push (if needed) and base branch to PR against. Wait for confirmation —
-don't push or create the PR silently, per the same rule this project's
-`commit` skill follows.
+push (if needed) and base branch to PR against.
 
 Check if the branch needs pushing:
 

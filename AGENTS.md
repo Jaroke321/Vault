@@ -1,4 +1,4 @@
-# [AGENTS.md](http://AGENTS.md)
+# AGENTS.md
 
 Vault is a single self-contained interactive CLI (a REPL prompt) for tracking personal
 finance/assets, backed by an embedded SQLite file. There are no servers, ports, or external
@@ -44,11 +44,10 @@ or after every small edit.
 
 - The intended stages of development for this project is:
   - Plan
-  - Implemention
-  - Human Review
+  - Implementation
+  - Human Review of code changes
   - Testing
   - Draft PR
-
 
 
 ### Commit & PR conventions
