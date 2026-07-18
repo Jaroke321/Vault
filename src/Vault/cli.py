@@ -75,11 +75,17 @@ class CLI:
     def load_command_classes(self, command_class_list: list) -> dict:
 
         commands = {}
+        owners = {}
 
         for cls in command_class_list:
             instance = cls(self.db, self.logger, self.price_fetcher, self.pending_commits)
             for name, entry_point in instance.init_command().items():
+                if name in commands:
+                    raise ValueError(
+                        f"Alias '{name}' is claimed by both {owners[name]} and {cls.__name__}."
+                    )
                 commands[name] = self._wrap_entry_point(entry_point, instance)
+                owners[name] = cls.__name__
 
         return commands
 

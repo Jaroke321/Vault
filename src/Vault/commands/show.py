@@ -2,7 +2,7 @@ from .base import BaseCommand
 
 class ShowCommand(BaseCommand):
 
-    call_str = "show" # Tells the prompt the string command in order to call this class
+    call_str = ["show", "s"] # Tells the prompt the string command(s) in order to call this class
 
     DEFAULT_MONTHS = 6
 
@@ -18,10 +18,6 @@ class ShowCommand(BaseCommand):
             self._show_field_over_months(options[0], options[1])
         else:
             print("Too many options given to the show command.")
-
-    def init_command(self) -> dict:
-
-        return {self.call_str: self.entry_point}
 
     ####################################
     # Sub-commands

@@ -2,7 +2,7 @@ from .base import BaseCommand
 
 class HelpCommand(BaseCommand):
 
-    call_str = "help" # Tells the prompt the string command in order to call this class
+    call_str = ["help", "h"] # Tells the prompt the string command(s) in order to call this class
 
     HELP_TEXT = """
   Vault Commands:
@@ -41,10 +41,6 @@ class HelpCommand(BaseCommand):
         directing input to the correct sub commands of this class."""
 
         self._print_help()
-
-    def init_command(self) -> dict:
-
-        return {self.call_str: self.entry_point}
 
     ####################################
     # Rendering

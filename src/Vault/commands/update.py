@@ -21,10 +21,6 @@ class UpdateCommand(BaseCommand):
         else:                                                                                                                         
            self.usage()
 
-    def init_command(self) -> dict:
-
-        return {self.call_str: self.entry_point}
-    
     ####################################
     # Sub-commands
     ####################################
