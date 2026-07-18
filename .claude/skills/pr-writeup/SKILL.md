@@ -130,13 +130,7 @@ reasonably confident (name mismatch, multiple candidates), leave that
 reviewer out rather than guessing wrong — this field is a nice-to-have,
 not the point of the writeup.
 
-## Step 7 — Confirm before writing to Notion
-
-Show the user: the title you'll give the page, the status you'll set, the
-linked task (or lack of one), and the writeup body. Wait for confirmation
-before creating the page — this writes to a shared Notion workspace.
-
-## Step 8 — Create the page
+## Step 7 — Create the page
 
 Using the data source ID and property names/types resolved in Step 1,
 create one page via `notion-create-pages` with `parent.data_source_id` set
@@ -156,7 +150,7 @@ know:
 Omit relation/reviewers properties entirely if nothing resolved for them —
 don't send empty arrays as a stand-in.
 
-## Step 9 — Report
+## Step 8 — Report
 
 Give the user the new Notion page's URL, and confirm whether it's linked
 to a task (name it) or not.

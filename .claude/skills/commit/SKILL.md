@@ -31,9 +31,9 @@ Recent commits (for message style reference):
    - Focuses on *why* or *what*, not a line-by-line retelling of the diff
    - Matches the tone and style of the recent commits shown above
 
-5. **Show the proposed commit message** to the user and ask them to confirm, suggest changes, or cancel before proceeding.
+5. **Show the proposed commit message** to the user
 
-6. **On confirmation**, run these steps in order using the Bash tool:
+6. **run** these steps in order using the Bash tool:
    - `git commit -m "<message>"` — create the commit
    - `git push -u origin <branch_name>` — push to remote
 

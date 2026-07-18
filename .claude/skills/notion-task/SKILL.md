@@ -123,6 +123,8 @@ This summary is what subsequent work should be grounded in — don't
 re-fetch the page again later in the same session unless the user asks
 for a refresh.
 
+**7. Mark Notion Task as In Progress** Go back to the notion task that was found and mark it as In Progress if it is not already.
+
 ## Gotchas
 
 - **`Git Branch` on the task page is not a reliable signal for "am I on
