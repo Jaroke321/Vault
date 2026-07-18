@@ -32,7 +32,7 @@ class HelpCommand(BaseCommand):
     commodity list                        Show all tagged fields with current prices and source
     commodity refresh                     Re-fetch live prices for all tagged fields
 
-    help                          Show this help message
+    help / h                      Show this help message
     exit / quit / q               Exit Vault
         """
 
