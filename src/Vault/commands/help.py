@@ -18,7 +18,7 @@ class HelpCommand(BaseCommand):
     commit                        Commit all pending staged updates to the database
     commit <n> [n ...]            Commit one or more pending updates by index
 
-    show                          Table of last 6 months across all fields
+    show / s                      Table of last 6 months across all fields
     show <n>                      Table of last N months across all fields
     show <field>                  Month-over-month trend for one field
     show <field> <n>              Trend for one field over last N months
