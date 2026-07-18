@@ -13,7 +13,7 @@ from .pending_commits import PendingCommits
 from .helper import *
 
 # Command classes
-from .commands import FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, HelpCommand, CommodityCommand
+from .commands import FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, HelpCommand, CommodityCommand, ExitCommand
 
 def main():
     parser = argparse.ArgumentParser(prog="vault")
@@ -55,7 +55,7 @@ class CLI:
         self.pending_commits = PendingCommits()
 
         # Need to init classes before using
-        command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, HelpCommand, CommodityCommand]
+        command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, HelpCommand, CommodityCommand, ExitCommand]
         self.command_classes = self.load_command_classes(command_class_list)
 
         # add command class entry points to the commands list

@@ -5,3 +5,4 @@ from .summary import SummaryCommand
 from .show import ShowCommand
 from .help import HelpCommand
 from .commodity import CommodityCommand
+from .exit import ExitCommand
