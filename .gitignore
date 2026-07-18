@@ -17,8 +17,10 @@ dist/
 # Logs
 logs/
 
-# Claude
-.claude/
+# Claude (project skills are tracked so cloud sessions get them too;
+# local-only settings like settings.local.json stay ignored)
+.claude/*
+!.claude/skills/
 .cursor/
 
 # Databases
