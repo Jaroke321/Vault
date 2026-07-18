@@ -35,6 +35,6 @@ Recent commits (for message style reference):
 
 6. **On confirmation**, run these steps in order using the Bash tool:
    - `git commit -m "<message>"` — create the commit
-   - `git push origin` — push to remote
+   - `git push -u origin <branch_name>` — push to remote
 
 7. Report the result: confirm the commit hash and that the push succeeded, or surface any error clearly.

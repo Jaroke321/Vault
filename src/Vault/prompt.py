@@ -1,3 +1,7 @@
+class ExitSignal(Exception):
+    pass
+
+
 class Prompt:
     """Base class for prompt engine."""
 
@@ -12,12 +16,15 @@ class Prompt:
 
         command_input = input(f"{self.project_name}/>")
 
-        while command_input not in ["exit", "quit", "q"]:
+        while True:
 
             command, options = self.validate_command(command_input)
-                
+
             if command is not None:
-                command(options)
+                try:
+                    command(options)
+                except ExitSignal:
+                    break
 
                 # it might be cool to be able to handle return values from the called function
                 # This would be relevant since the command classes are calling an entry point functin
