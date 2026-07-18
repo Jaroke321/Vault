@@ -18,7 +18,7 @@ class HelpCommand(BaseCommand):
     commit                        Commit all pending staged updates to the database
     commit <n> [n ...]            Commit one or more pending updates by index
 
-    show                          Table of last 6 months across all fields
+    show / s                      Table of last 6 months across all fields
     show <n>                      Table of last N months across all fields
     show <field>                  Month-over-month trend for one field
     show <field> <n>              Trend for one field over last N months
@@ -32,7 +32,7 @@ class HelpCommand(BaseCommand):
     commodity list                        Show all tagged fields with current prices and source
     commodity refresh                     Re-fetch live prices for all tagged fields
 
-    help                          Show this help message
+    help / h                      Show this help message
     exit / quit / q               Exit Vault
         """
 
