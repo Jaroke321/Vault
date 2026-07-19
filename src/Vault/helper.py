@@ -21,6 +21,19 @@ def format_value(value: float, unit: str = "$") -> str:
         return f"{unit}{value:,.2f}"
     return f"{value:,.4f} {unit}"
 
+_SPARKS = "▁▂▃▄▅▆▇█"
+
+def sparkline(values: list[float]) -> str:
+    if not values:
+        return ""
+    lo, hi = min(values), max(values)
+    if lo == hi:
+        return _SPARKS[len(_SPARKS) // 2] * len(values)
+    return "".join(
+        _SPARKS[round((v - lo) / (hi - lo) * (len(_SPARKS) - 1))]
+        for v in values
+    )
+
 _VAULT_ART = (
     f"{BOLD}{YELLOW}" +
     r"""

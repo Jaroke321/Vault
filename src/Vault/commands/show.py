@@ -90,6 +90,11 @@ class ShowCommand(BaseCommand):
 
     def _print_field_trend(self, field_name, rows, unit: str = "$"):
         print(f"\n  Trend for '{field_name}':")
+
+        values = [value for _, value in rows]
+        color = self.GREEN if values[-1] >= values[0] else self.RED
+        print(f"  {self.cat_label(self.sparkline(values), color)}")
+
         print(f"  {'Month':<10}  {'Value':>17}  {'Delta':>17}")
         print("  " + "-" * 50)
 
