@@ -79,3 +79,22 @@ class BaseCommand(ABC):
 
     def _is_a_category_name(self, raw: str) -> bool:
         return raw.lower() in self.db.get_categories()
+
+    def _commodity_price(self, field_id: int):
+        """Return the best available price for a commodity-tagged field, or None.
+
+        If a live price_fetcher is present, defers to it (override -> live -> cached).
+        Otherwise falls back to reading override/cached prices straight from the DB, so
+        they're still available when price_fetcher is None (e.g. --test mode).
+        """
+        if self.price_fetcher is not None:
+            return self.price_fetcher.get_price(field_id)
+
+        for row_field_id, _, _, override_price, cached_price, _ in self.db.get_commodity_fields():
+            if row_field_id != field_id:
+                continue
+            if override_price is not None:
+                return override_price
+            return cached_price
+
+        return None
