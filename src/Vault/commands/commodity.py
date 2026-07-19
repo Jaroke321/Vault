@@ -99,16 +99,12 @@ class CommodityCommand(BaseCommand):
 
     def sub_list(self, options: list):
 
-        # Error checking
-        if self.price_fetcher is None:
-            print("Price fetcher not available.")
-            return
-        status_rows = self.price_fetcher.get_fetch_status()
+        # Business logic
+        status_rows = self._fetch_status()
         if not status_rows:
             print("No commodity-tagged fields. Use 'commodity tag <field> <symbol>' to add one.")
             return
 
-        # Business logic
         print(f"\n  {'Field':<20}  {'Symbol':<6}  {'Price':>12}  {'Source':<12}  {'Cached At'}")
         print("  " + "-" * 72)
         for field_name, symbol, price, source, cached_at in status_rows:
@@ -116,6 +112,28 @@ class CommodityCommand(BaseCommand):
             age_str = cached_at[:19] if cached_at else "never"
             print(f"  {field_name:<20}  {symbol:<6}  {price_str:>12}  {source:<12}  {age_str}")
         print()
+
+    def _fetch_status(self) -> list[tuple]:
+        """Return display info for each tagged field: (field_name, symbol, price, source, cached_at).
+
+        Defers to price_fetcher.get_fetch_status() when a fetcher is present (it also
+        knows about freshly-fetched live prices). Otherwise falls back to override/cached
+        prices read straight from the DB, so 'commodity list' still works without a
+        fetcher (e.g. --test mode). source is one of: 'override', 'cached', 'unavailable'
+        (plus 'live' when a fetcher supplied it).
+        """
+        if self.price_fetcher is not None:
+            return self.price_fetcher.get_fetch_status()
+
+        result = []
+        for field_id, field_name, symbol, override_price, cached_price, cached_at in self.db.get_commodity_fields():
+            if override_price is not None:
+                result.append((field_name, symbol, override_price, "override", cached_at))
+            elif cached_price is not None:
+                result.append((field_name, symbol, cached_price, "cached", cached_at))
+            else:
+                result.append((field_name, symbol, None, "unavailable", cached_at))
+        return result
 
     def sub_refresh(self, options: list):
 

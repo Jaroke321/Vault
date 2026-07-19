@@ -47,8 +47,8 @@ class SummaryCommand(BaseCommand):
                 print(f"    {field_name:<20} {self.format_value(value, unit):>16}")
                 assets += value
 
-            elif self.price_fetcher is not None:
-                price = self.price_fetcher.get_price(field_id)
+            else:
+                price = self._commodity_price(field_id)
 
                 if price is not None:
                     usd_equiv = value * price
@@ -57,9 +57,6 @@ class SummaryCommand(BaseCommand):
 
                 else:
                     print(f"    {field_name:<20} {self.format_value(value, unit):>10} (no price)")
-
-            else:
-                print(f"    {field_name:<20} {self.format_value(value, unit):>16}")
 
         net = assets - liabilities
         print(f"\n  {'Assets:':<20} ${assets:>12,.2f}")
