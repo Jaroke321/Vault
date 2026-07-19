@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from ..helper import (
-    cat_label, format_value, print_banner,
+    cat_label, format_value, print_banner, sparkline,
     BOLD, RESET,
     BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE,
 )
@@ -11,6 +11,7 @@ class BaseCommand(ABC):
     cat_label    = staticmethod(cat_label)
     format_value = staticmethod(format_value)
     print_banner = staticmethod(print_banner)
+    sparkline    = staticmethod(sparkline)
 
     # ANSI color constants
     BOLD, RESET  = BOLD, RESET
