@@ -22,8 +22,10 @@ approval** (except loading a Notion task / writing a plan draft for review).
 
 1. **Load task** — `notion-task` skill. Pulls scope from Tasks Tracker and
    creates/resumes branch `task-<id>-<slug>`.
-2. **Plan** — Write a detailed step plan to a `.md` file. Stop and wait for
-   the user to accept it. Do not implement until accepted.
+2. **Plan** — Use the `plan` skill. Writes a detailed, stepped
+   implementation plan (with ripple-effect analysis) to a gitignored
+   `.md` file under `plans/`. Stop and wait for the user to accept it.
+   Do not implement until accepted.
 3. **Implement** — Execute the accepted plan only.
 4. **Test** — Only when the user asks. Use the `test` skill (not ad-hoc
    `compileall` / `vault --test`). That skill scopes checks to the diff.

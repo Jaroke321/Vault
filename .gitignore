@@ -17,6 +17,9 @@ dist/
 # Logs
 logs/
 
+# Plans
+plans/
+
 # Shared project skills live in skills/; .claude/skills and .cursor/skills
 # are symlinks to that tree (tracked so Claude Code and Cursor both see them).
 # Local-only settings under .claude/ / .cursor/ stay ignored.
