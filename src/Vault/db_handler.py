@@ -272,6 +272,37 @@ class DBHandler:
 
             return (month_list, active_fields, data)
 
+    def get_full_history(self):
+        """Return the complete recorded history across all active fields — every distinct
+        month on record, not limited to a recent window. Same 3-tuple shape as
+        get_history()'s all-fields form: (month_list, active_fields, data)."""
+        with sqlite3.connect(self.db_path) as conn:
+            month_rows = conn.execute(
+                "SELECT DISTINCT month FROM snapshots ORDER BY month"
+            ).fetchall()
+            month_list = [r[0] for r in month_rows]
+
+            if not month_list:
+                return ([], [], {})
+
+            active_fields = self.get_active_fields()
+
+            placeholders = ",".join("?" * len(month_list))
+            snapshot_rows = conn.execute(
+                f"""SELECT f.name, s.month, s.value
+                    FROM snapshots s
+                    JOIN fields f ON f.id = s.field_id
+                    WHERE f.deactivated_at IS NULL
+                      AND s.month IN ({placeholders})""",
+                month_list
+            ).fetchall()
+
+        data = {}
+        for field, month, value in snapshot_rows:
+            data.setdefault(field, {})[month] = value
+
+        return (month_list, active_fields, data)
+
     def get_latest_values(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(

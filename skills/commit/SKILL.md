@@ -1,6 +1,6 @@
 ---
 name: commit
-description: ReviewS changes, write a commit message, commit, and push to origin. Use when the user wants to commit and push staged work.
+description: Reviews changes, write a commit message, commit, and push to origin. Use when the user wants to commit and push work.
 disable-model-invocation: true
 allowed-tools: Bash
 ---
