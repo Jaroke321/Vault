@@ -17,11 +17,13 @@ dist/
 # Logs
 logs/
 
-# Claude (project skills are tracked so cloud sessions get them too;
-# local-only settings like settings.local.json stay ignored)
+# Shared project skills live in skills/; .claude/skills and .cursor/skills
+# are symlinks to that tree (tracked so Claude Code and Cursor both see them).
+# Local-only settings under .claude/ / .cursor/ stay ignored.
 .claude/*
-!.claude/skills/
-.cursor/
+!.claude/skills
+.cursor/*
+!.cursor/skills
 
 # Databases
 *.db
