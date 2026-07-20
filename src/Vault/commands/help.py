@@ -27,6 +27,7 @@ class HelpCommand(BaseCommand):
 
     export csv                    Dump full recorded history to CSV (stdout)
     export csv <filename>         Dump full recorded history to CSV (file)
+    import csv <filename>         Import a wide-format CSV back into the database
 
     commodity tag <field> <commodity>     Tag a field as a commodity (e.g. 'gold' or 'XAU')
     commodity untag <field>               Remove commodity tag from a field

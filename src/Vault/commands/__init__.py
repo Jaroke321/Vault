@@ -6,4 +6,5 @@ from .show import ShowCommand
 from .help import HelpCommand
 from .commodity import CommodityCommand
 from .export import ExportCommand
+from .import_ import ImportCommand
 from .exit import ExitCommand

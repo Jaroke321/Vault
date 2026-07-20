@@ -76,12 +76,19 @@ Values are staged as pending commits and must be committed to be saved.
 - `show <field> <n>` — trend for a single field over the last N months
 - `summary` — net worth snapshot with assets, liabilities, and equity breakdown
 
-#### Exporting Data
+#### Exporting & Importing Data
 
 - `export csv` — dump the complete recorded history (all months, all active fields) to CSV on stdout
 - `export csv <filename>` — same, written to `<filename>` instead
+- `import csv <filename>` — read a wide-format CSV (the shape `export csv` produces) back into the database
 
 The CSV is "wide": one row per month, one column per active field, with raw numeric values (no currency formatting) so it can be used directly in a spreadsheet. The first two rows are headers — a `category` row followed by the `month`/field-name row — so each field column carries its category alongside its name. Deactivated fields are excluded, consistent with `show`/`summary`.
+
+On import, fields and categories named in the header that don't exist yet are auto-created. A cell with no existing value for that field/month is committed immediately; a cell that would overwrite an existing value is staged as a pending commit instead (visible via `show` / `commit`), so nothing is silently overwritten. Empty cells are skipped; non-numeric cells are skipped with a warning.
+
+**Legacy CSVs** (exported before the category header row existed) still import for columns that name already-active fields. Columns naming unknown fields are reported as errors and skipped — without a category row there is no category to auto-create them under.
+
+**Debt asset values are not round-trippable.** Export only writes balance snapshots, not debt asset values (set via `update <field> <balance> <asset>`). Import therefore only ever populates the balance side of a debt field.
 
 #### Commodity Pricing
 
