@@ -25,6 +25,9 @@ class HelpCommand(BaseCommand):
 
     summary                       Net worth snapshot (assets minus debts)
 
+    export csv                    Dump full recorded history to CSV (stdout)
+    export csv <filename>         Dump full recorded history to CSV (file)
+
     commodity tag <field> <commodity>     Tag a field as a commodity (e.g. 'gold' or 'XAU')
     commodity untag <field>               Remove commodity tag from a field
     commodity override <field> <price>    Lock a manual price per unit for this field

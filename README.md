@@ -76,6 +76,13 @@ Values are staged as pending commits and must be committed to be saved.
 - `show <field> <n>` — trend for a single field over the last N months
 - `summary` — net worth snapshot with assets, liabilities, and equity breakdown
 
+#### Exporting Data
+
+- `export csv` — dump the complete recorded history (all months, all active fields) to CSV on stdout
+- `export csv <filename>` — same, written to `<filename>` instead
+
+The CSV is "wide": one row per month, one column per active field, with raw numeric values (no currency formatting) so it can be used directly in a spreadsheet. Deactivated fields are excluded, consistent with `show`/`summary`.
+
 #### Commodity Pricing
 
 Fields with non-monetary units (e.g. `oz`, `g`) can be tagged with a commodity symbol. On startup, Vault fetches live market prices and uses them to convert quantities to USD in the `summary` output. Prices are cached locally so the last known value is used if a fetch fails.
