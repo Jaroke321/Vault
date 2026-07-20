@@ -303,6 +303,31 @@ class DBHandler:
 
         return (month_list, active_fields, data)
 
+    def get_field_values(self, field_names: list[str]) -> dict[str, dict[str, float]]:
+        """Return {field_name: {month: value}} from snapshots for the given fields.
+
+        Names are matched case-insensitively and returned lower-cased. Empty input
+        returns {} without querying.
+        """
+        if not field_names:
+            return {}
+
+        lowered = [name.lower() for name in field_names]
+        placeholders = ",".join("?" * len(lowered))
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"""SELECT f.name, s.month, s.value
+                    FROM snapshots s
+                    JOIN fields f ON f.id = s.field_id
+                    WHERE f.name IN ({placeholders})""",
+                lowered,
+            ).fetchall()
+
+        data: dict[str, dict[str, float]] = {}
+        for field, month, value in rows:
+            data.setdefault(field, {})[month] = value
+        return data
+
     def get_latest_values(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
