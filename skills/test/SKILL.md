@@ -143,6 +143,6 @@ not the full test plan. Prefer **dynamic sessions derived from the diff**.
 | `src/Vault/commands/summary.py` | `summary` (plus setup that makes new summary logic visible) |
 | `src/Vault/commands/commodity.py` | `tag` / `untag` / `override` as relevant — not `refresh` alone |
 | `help.py`, `base.py`, `cli.py`, `db_handler.py`, `test_data.py`, other `src/Vault/*` | Derive from the hunks; **baseline** (`field list` → `summary` → `exit`) only if you cannot map a tighter session |
-| Docs / `.claude/skills` / workflows only | no vault run; compileall N/A |
+| Docs / `skills/` / workflows only | no vault run; compileall N/A |
 
 4. Count each distinct check (compileall, each session) toward `X/Y passed`.
