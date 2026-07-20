@@ -56,8 +56,9 @@ class ExportCommand(BaseCommand):
     # Helpers
     ####################################
     def _build_rows(self, month_list, active_fields, data) -> list:
+        category_row = ["category"] + [category for _, category, _ in active_fields]
         header = ["month"] + [name for name, _, _ in active_fields]
-        rows = [header]
+        rows = [category_row, header]
         for month in month_list:
             row = [month]
             for field_name, _, _ in active_fields:
