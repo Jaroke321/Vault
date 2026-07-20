@@ -81,7 +81,7 @@ Values are staged as pending commits and must be committed to be saved.
 - `export csv` — dump the complete recorded history (all months, all active fields) to CSV on stdout
 - `export csv <filename>` — same, written to `<filename>` instead
 
-The CSV is "wide": one row per month, one column per active field, with raw numeric values (no currency formatting) so it can be used directly in a spreadsheet. Deactivated fields are excluded, consistent with `show`/`summary`.
+The CSV is "wide": one row per month, one column per active field, with raw numeric values (no currency formatting) so it can be used directly in a spreadsheet. The first two rows are headers — a `category` row followed by the `month`/field-name row — so each field column carries its category alongside its name. Deactivated fields are excluded, consistent with `show`/`summary`.
 
 #### Commodity Pricing
 
