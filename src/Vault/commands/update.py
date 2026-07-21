@@ -70,7 +70,7 @@ class UpdateCommand(BaseCommand):
             old = self.db.get_value(field_name, target_month)
             if old is not None and old != value:
                 print(
-                    f"[WARN] Overwriting {field_name} {target_month}: "
+                    f"[WARN] Overwriting value for {field_name} {target_month}: "
                     f"{self.format_value(old)} → {self.format_value(value)}"
                 )
 
@@ -93,7 +93,7 @@ class UpdateCommand(BaseCommand):
                 old = self.db.get_asset_value(field_name, target_month)
                 if old is not None and old != asset_value:
                     print(
-                        f"[WARN] Overwriting {field_name} {target_month}: "
+                        f"[WARN] Overwriting asset for {field_name} {target_month}: "
                         f"{self.format_value(old)} → {self.format_value(asset_value)}"
                     )
                 self.commits.append([ field_name, target_month, asset_value, "asset" ])
