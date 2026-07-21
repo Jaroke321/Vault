@@ -346,6 +346,34 @@ class DBHandler:
 
         return {field: value for field, value in rows}
 
+    def get_value(self, field_name: str, month: str) -> float | None:
+        """Return the snapshot value for one active field+month, or None if absent."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT s.value
+                   FROM snapshots s
+                   JOIN fields f ON f.id = s.field_id
+                   WHERE f.deactivated_at IS NULL
+                     AND f.name = ?
+                     AND s.month = ?""",
+                (field_name.lower(), month),
+            ).fetchone()
+        return float(row[0]) if row is not None else None
+
+    def get_asset_value(self, field_name: str, month: str) -> float | None:
+        """Return the debt asset snapshot for one active field+month, or None if absent."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT das.asset_value
+                   FROM debt_asset_snapshots das
+                   JOIN fields f ON f.id = das.field_id
+                   WHERE f.deactivated_at IS NULL
+                     AND f.name = ?
+                     AND das.month = ?""",
+                (field_name.lower(), month),
+            ).fetchone()
+        return float(row[0]) if row is not None else None
+
     def get_latest_values(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(

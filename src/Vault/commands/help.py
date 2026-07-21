@@ -11,9 +11,9 @@ class HelpCommand(BaseCommand):
     field list                           Show all active fields by category
     field set <category> unit <unit>     Set display unit for a category (default: $)
 
-    update                               Interactively stage values for all fields this month
-    update <field> <value>               Stage a value for a single field
-    update <field> <value> <asset>       Stage a value + asset value for a debt field
+    update                               Interactively stage values for all fields (default: current month)
+    update <field> <value> [-m YYYY-MM]  Stage a value for a single field
+    update <field> <value> <asset> [-m YYYY-MM]  Stage value + asset for a debt field
 
     commit                        Commit all pending staged updates to the database
     commit <n> [n ...]            Commit one or more pending updates by index
