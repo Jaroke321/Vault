@@ -68,6 +68,19 @@ class BaseCommand(ABC):
         except ValueError:
             return None
 
+    def _parse_month_year(self, raw_month: str, raw_year: str) -> str | None:
+        month = self._parse_int(raw_month)
+        year = self._parse_int(raw_year)
+        if month is None or year is None:
+            return None
+        if month < 1 or month > 12:
+            return None
+        if year < 100:
+            year = 2000 + year
+        elif year < 1000 or year > 9999:
+            return None
+        return f"{year:04d}-{month:02d}"
+
     def _parse_float(self, raw: str):
         try:
             return float(raw.replace("$", "").replace(",", "").strip())

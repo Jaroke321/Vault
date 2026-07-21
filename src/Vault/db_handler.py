@@ -328,6 +328,24 @@ class DBHandler:
             data.setdefault(field, {})[month] = value
         return data
 
+    def get_values_for_month(self, month: str) -> dict[str, float]:
+        """Return {field_name: value} for active fields at the given month.
+
+        Returns {} when the month has no rows — callers distinguish missing data
+        from zero by key absence, not by a sentinel value.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT f.name, s.value
+                   FROM snapshots s
+                   JOIN fields f ON f.id = s.field_id
+                   WHERE f.deactivated_at IS NULL
+                     AND s.month = ?""",
+                (month,),
+            ).fetchall()
+
+        return {field: value for field, value in rows}
+
     def get_latest_values(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(

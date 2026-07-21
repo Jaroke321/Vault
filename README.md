@@ -74,6 +74,9 @@ Values are staged as pending commits and must be committed to be saved.
 - `show <n>` — table of the last N months
 - `show <field>` — month-over-month trend for a single field
 - `show <field> <n>` — trend for a single field over the last N months
+- `diff <m1> <y1> <m2> <y2>` — compare all fields between two months (e.g. `diff 1 26 3 26` → January 2026 vs. March 2026)
+- `diff <field> <m1> <y1> <m2> <y2>` — compare one field between two months
+- Months are given as `<month> <year>` pairs; two-digit years mean 20xx (`26` → 2026)
 - `summary` — net worth snapshot with assets, liabilities, and equity breakdown
 
 #### Exporting & Importing Data
