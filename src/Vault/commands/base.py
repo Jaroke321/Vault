@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+import datetime
+import re
 from ..helper import (
     cat_label, format_value, print_banner, sparkline,
     BOLD, RESET,
@@ -80,6 +82,26 @@ class BaseCommand(ABC):
         elif year < 1000 or year > 9999:
             return None
         return f"{year:04d}-{month:02d}"
+
+    def _parse_month_string(self, raw: str) -> str | None:
+        """Validate a YYYY-MM token; return normalized form or None.
+
+        Requires exactly four digits, a hyphen, and two digits. Month must be
+        1–12, year 2000–9999, and the month must not be after the current month.
+        """
+        if not isinstance(raw, str) or not re.fullmatch(r"\d{4}-\d{2}", raw):
+            return None
+        year_s, month_s = raw.split("-", 1)
+        year, month = int(year_s), int(month_s)
+        if month < 1 or month > 12:
+            return None
+        if year < 2000 or year > 9999:
+            return None
+        normalized = f"{year:04d}-{month:02d}"
+        current_month = datetime.datetime.now().strftime("%Y-%m")
+        if normalized > current_month:
+            return None
+        return normalized
 
     def _parse_float(self, raw: str):
         try:
