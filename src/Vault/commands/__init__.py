@@ -3,6 +3,7 @@ from .update import UpdateCommand
 from .commit import CommitCommand
 from .summary import SummaryCommand
 from .show import ShowCommand
+from .diff import DiffCommand
 from .help import HelpCommand
 from .commodity import CommodityCommand
 from .export import ExportCommand

@@ -23,6 +23,9 @@ class HelpCommand(BaseCommand):
     show <field>                  Month-over-month trend for one field
     show <field> <n>              Trend for one field over last N months
 
+    diff <m1> <y1> <m2> <y2>      Compare all fields between two months
+    diff <field> <m1> <y1> <m2> <y2>   Compare one field between two months
+
     summary                       Net worth snapshot (assets minus debts)
 
     export csv                    Dump full recorded history to CSV (stdout)
