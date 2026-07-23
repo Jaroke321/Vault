@@ -9,8 +9,8 @@ Writes a thorough, stepped implementation plan for the task currently in
 context and saves it to a gitignored file in the repo. This is stage 2 of
 the dev flow in `AGENTS.md`: **Load task → Plan → Implement → Test →
 Commit + push → Draft PR → PR writeup**. Writing the plan draft does not
-require approval to produce, but **implementation must not begin until the
-user explicitly accepts the plan.**
+require approval to produce, but **the `implement` skill must not run
+until the user explicitly accepts the plan.**
 
 This skill only writes the plan file. It does not implement anything, does
 not run tests, and does not touch git branches (that's `notion-task`'s job).
@@ -144,9 +144,9 @@ grep -qxF 'plans/' .gitignore || printf '\n# Implementation plans (local scratch
 
 Show the user the plan's path and its full content (or a summary if very
 long, but the file itself always has the full detail). Then **stop and
-wait for explicit approval** — do not begin implementation, do not run
-`git add`/commit on the plan file (it's gitignored, so this is moot for
-the file itself, but also don't start editing source files) until the
+wait for explicit approval** — do not invoke the `implement` skill, do not
+edit source files, and do not run `git add`/commit on the plan file (moot
+since it's gitignored, but don't start touching source either) until the
 user accepts the plan or asks for revisions.
 
 If the user requests changes, edit the same file in place rather than

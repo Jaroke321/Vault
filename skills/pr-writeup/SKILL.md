@@ -153,7 +153,8 @@ don't send empty arrays as a stand-in.
 ## Step 8 — Report
 
 Give the user the new Notion page's URL, and confirm whether it's linked
-to a task (name it) or not.
+to a task (name it) or not. This is the final stage of the dev flow in
+`AGENTS.md` — stop here.
 
 ## Gotchas
 

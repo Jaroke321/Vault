@@ -12,6 +12,11 @@ that needs to recover which Notion task a diff belongs to — this skill
 does not do code review itself, it just makes the task number recoverable
 from `git branch --show-current`. It does not write any other files.
 
+This is stage 1 of the dev flow in `AGENTS.md`. It only loads context and
+manages the branch — **stop once loading is done and wait for the user to
+say to move forward** (e.g. to the `plan` skill) rather than starting to
+plan or implement on your own.
+
 Verified against the live workspace on 2026-07-17 (queried task 7 end to
 end); the IDs below are this workspace's actual database, not examples.
 
