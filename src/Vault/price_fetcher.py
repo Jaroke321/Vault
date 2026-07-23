@@ -60,15 +60,19 @@ class PriceFetcher:
     }
 
     @classmethod
-    def resolve_symbol(cls, raw: str) -> str | None:
-        """Resolve a friendly name or symbol to a canonical symbol, or None if unrecognized."""
+    def resolve_symbol(cls, raw: str) -> str:
+        """Resolve a friendly name or symbol to a canonical commodity symbol.
+
+        Unrecognized input passes through as a literal ticker (e.g. a stock/ETF
+        symbol, which is already its own ticker) rather than returning None.
+        """
         key = raw.lower()
         if key in cls.NAME_TO_SYMBOL:
             return cls.NAME_TO_SYMBOL[key]
         upper = raw.upper()
         if upper in cls.SYMBOL_TO_TICKER:
             return upper
-        return None
+        return raw.strip().upper()
 
     def __init__(self, db, logger):
         self.db = db
@@ -139,6 +143,13 @@ class PriceFetcher:
 
         return None
 
+    def probe_symbol(self, symbol: str) -> float | None:
+        """Live-fetch a single symbol's price, or None if it can't be resolved.
+
+        Used by 'commodity tag' to validate a pass-through ticker at tag time.
+        """
+        return self._fetch_symbol(symbol)
+
     def get_fetch_status(self) -> list[tuple]:
         """Return display info for each tagged field: (field_name, symbol, price, source, cached_at).
 
@@ -158,10 +169,9 @@ class PriceFetcher:
         return result
 
     def _fetch_symbol(self, symbol: str) -> float | None:
-        ticker_name = self.SYMBOL_TO_TICKER.get(symbol)
-        if ticker_name is None:
-            self.logger.log(f"No ticker mapping for commodity symbol '{symbol}'")
-            return None
+        # Pass-through tickers (stocks/ETFs) aren't in SYMBOL_TO_TICKER — a stock's
+        # symbol is already its yfinance ticker, unlike futures-style commodities.
+        ticker_name = self.SYMBOL_TO_TICKER.get(symbol, symbol)
         try:
             ticker = yf.Ticker(ticker_name)
             price = ticker.fast_info.last_price

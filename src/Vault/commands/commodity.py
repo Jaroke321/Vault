@@ -1,3 +1,4 @@
+import datetime
 from .base import BaseCommand
 from ..price_fetcher import PriceFetcher
 
@@ -45,15 +46,24 @@ class CommodityCommand(BaseCommand):
         # Business logic
         field_name = options[0]
         symbol = PriceFetcher.resolve_symbol(options[1])
-        if symbol is None:
-            print(f"Unknown commodity '{options[1]}'.")
-            print(f"  Names:   {', '.join(sorted(PriceFetcher.NAME_TO_SYMBOL.keys()))}")
-            print(f"  Symbols: {', '.join(sorted(PriceFetcher.SYMBOL_TO_TICKER.keys()))}")
-            return
+
+        # Known commodity symbols (metals, etc.) tag instantly, same as always — the
+        # static list is still their typo safety net. Pass-through tickers (anything
+        # not in the static maps) have no such list, so validate them live instead.
+        live_price = None
+        if symbol not in PriceFetcher.SYMBOL_TO_TICKER and self.price_fetcher is not None:
+            live_price = self.price_fetcher.probe_symbol(symbol)
+            if live_price is None:
+                print(f"Could not resolve '{options[1]}' as a live ticker — check the symbol and your connection.")
+                return
+
         success = self.db.set_commodity(field_name, symbol)
         if success:
             print(f"Field '{field_name}' tagged as {symbol}.")
             self.logger.log(f"Commodity tag set: {field_name} -> {symbol}")
+            if live_price is not None:
+                now = datetime.datetime.now().isoformat()
+                self.db.set_commodity_cache(field_name, live_price, now)
         else:
             print(f"No active field named '{field_name}'.")
 
