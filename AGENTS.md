@@ -17,22 +17,30 @@ for the command reference.
 
 ## Development flow
 
-Work follows this sequence. **Do not advance a stage without explicit user
-approval** (except loading a Notion task / writing a plan draft for review).
+Work follows this sequence, one stage at a time. **After finishing a stage,
+stop and wait for the user to explicitly say to move forward** — never
+chain into the next stage on your own, even when it seems obvious. Starting
+the action a stage itself calls for (loading a task, drafting a plan,
+implementing) doesn't need pre-approval; what's gated is moving on
+afterward.
 
 1. **Load task** — `notion-task` skill. Pulls scope from Tasks Tracker and
-   creates/resumes branch `task-<id>-<slug>`.
-2. **Plan** — Use the `plan` skill. Writes a detailed, stepped
-   implementation plan (with ripple-effect analysis) to a gitignored
-   `.md` file under `plans/`. Stop and wait for the user to accept it.
-   Do not implement until accepted.
-3. **Implement** — Execute the accepted plan only.
-4. **Test** — Only when the user asks. Use the `test` skill (not ad-hoc
-   `compileall` / `vault --test`). That skill scopes checks to the diff.
-5. **Commit + push** — Only when the user asks. Use the `commit` skill.
-6. **Draft PR** — Only when the user asks. Use `draft-pr` (`gh pr create --draft`).
-   Never open ready-for-review: Claude Code Review runs on draft → ready only.
-7. **PR writeup** — Only when the user asks. Use `pr-writeup` to file work,
+   creates/resumes branch `task-<id>-<slug>`. Stop; wait to be told to plan.
+2. **Plan** — `plan` skill. Writes a detailed, stepped implementation plan
+   (with ripple-effect analysis) to a gitignored `.md` file under `plans/`.
+   Stop and wait for the user to accept it. Do not implement until accepted.
+3. **Implement** — `implement` skill. Writes the code for the accepted plan
+   (or the task as scoped in chat). Only a quick smoke test and a cleanup
+   pass happen here — not real testing. Stop; wait to be told to test.
+4. **Test** — Only when the user asks. `test` skill (not ad-hoc
+   `compileall` / `vault --test`) — scopes thorough, edge-case checks to
+   the diff. Stop after reporting results.
+5. **Commit + push** — Only when the user asks. `commit` skill. Stop after
+   pushing.
+6. **Draft PR** — Only when the user asks. `draft-pr`
+   (`gh pr create --draft`). Never open ready-for-review: Claude Code Review
+   runs on draft → ready only. Stop after opening.
+7. **PR writeup** — Only when the user asks. `pr-writeup` files work,
    tests, description, comments, and reviews into the Notion PR / MR Hub.
 
 Prefer project skills over ad-hoc `git` / `gh` / Notion commands so format

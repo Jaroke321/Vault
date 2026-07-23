@@ -37,4 +37,4 @@ Recent commits (for message style reference):
    - `git commit -m "<message>"` — create the commit
    - `git push -u origin <branch_name>` — push to remote
 
-7. Report the result: confirm the commit hash and that the push succeeded, or surface any error clearly.
+7. Report the result: confirm the commit hash and that the push succeeded, or surface any error clearly. Then **stop** — this is stage 5 of the dev flow in `AGENTS.md`; do not open a PR or start any further stage on your own.

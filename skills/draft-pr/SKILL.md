@@ -161,7 +161,9 @@ EOF
 )"
 ```
 
-Report the PR URL `gh pr create` returns.
+Report the PR URL `gh pr create` returns. Then **stop** — this is stage 6
+of the dev flow in `AGENTS.md`; do not file a PR writeup or start any
+further stage on your own.
 
 ## Gotchas
 

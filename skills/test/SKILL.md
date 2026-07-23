@@ -5,8 +5,10 @@ description: Run Vault checks scoped to what actually changed — compileall plu
 
 # Test
 
-Run only the checks relevant to what changed, then explain failures — don't
-just dump raw output back at the user.
+Stage 4 of the dev flow in `AGENTS.md`, run only when the user asks. Run
+only the checks relevant to what changed, then explain failures — don't
+just dump raw output back at the user. When done, **stop and report** —
+don't commit, push, or advance to the next stage on your own.
 
 Vault has **no pytest/unittest suite**. Checks are: `python -m compileall`
 plus agent-built sessions piped into `vault --test`. There is no smoke-test
