@@ -183,7 +183,7 @@ class DBHandler:
             ).fetchall()
             return [r[0] for r in rows]
 
-    def record_value(self, field_name: str, month: str, value: float) -> bool:
+    def record_value(self, field_name: str, month: str, value: float, recorded_at: str | None = None) -> bool:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             row = conn.execute(
@@ -193,18 +193,20 @@ class DBHandler:
             if row is None:
                 return False
             field_id = row[0]
+            if recorded_at is None:
+                recorded_at = datetime.datetime.now().isoformat()
             conn.execute(
                 """INSERT INTO snapshots (field_id, month, value, recorded_at)
                    VALUES (?, ?, ?, ?)
                    ON CONFLICT(field_id, month)
                    DO UPDATE SET value = excluded.value,
                                  recorded_at = excluded.recorded_at""",
-                (field_id, month, value, datetime.datetime.now().isoformat())
+                (field_id, month, value, recorded_at)
             )
             conn.commit()
             return True
 
-    def record_asset_value(self, field_name: str, month: str, asset_value: float) -> bool:
+    def record_asset_value(self, field_name: str, month: str, asset_value: float, recorded_at: str | None = None) -> bool:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             row = conn.execute(
@@ -218,16 +220,56 @@ class DBHandler:
             if row is None:
                 return False
             field_id = row[0]
+            if recorded_at is None:
+                recorded_at = datetime.datetime.now().isoformat()
             conn.execute(
                 """INSERT INTO debt_asset_snapshots (field_id, month, asset_value, recorded_at)
                    VALUES (?, ?, ?, ?)
                    ON CONFLICT(field_id, month)
                    DO UPDATE SET asset_value = excluded.asset_value,
                                  recorded_at = excluded.recorded_at""",
-                (field_id, month, asset_value, datetime.datetime.now().isoformat())
+                (field_id, month, asset_value, recorded_at)
             )
             conn.commit()
             return True
+
+    def delete_value(self, field_name: str, month: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            row = conn.execute(
+                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (field_name.lower(),)
+            ).fetchone()
+            if row is None:
+                return False
+            field_id = row[0]
+            cursor = conn.execute(
+                "DELETE FROM snapshots WHERE field_id = ? AND month = ?",
+                (field_id, month)
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def delete_asset_value(self, field_name: str, month: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            row = conn.execute(
+                """SELECT f.id FROM fields f
+                   JOIN categories c ON c.id = f.category_id
+                   WHERE f.name = ?
+                     AND f.deactivated_at IS NULL
+                     AND c.name = 'debt'""",
+                (field_name.lower(),)
+            ).fetchone()
+            if row is None:
+                return False
+            field_id = row[0]
+            cursor = conn.execute(
+                "DELETE FROM debt_asset_snapshots WHERE field_id = ? AND month = ?",
+                (field_id, month)
+            )
+            conn.commit()
+            return cursor.rowcount == 1
 
     def get_history(self, field_name: str = None, months: int = 6):
         if field_name is not None:
@@ -373,6 +415,34 @@ class DBHandler:
                 (field_name.lower(), month),
             ).fetchone()
         return float(row[0]) if row is not None else None
+
+    def get_value_row(self, field_name: str, month: str) -> tuple[float, str] | None:
+        """Return (value, recorded_at) for one active field+month, or None if absent."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT s.value, s.recorded_at
+                   FROM snapshots s
+                   JOIN fields f ON f.id = s.field_id
+                   WHERE f.deactivated_at IS NULL
+                     AND f.name = ?
+                     AND s.month = ?""",
+                (field_name.lower(), month),
+            ).fetchone()
+        return (float(row[0]), row[1]) if row is not None else None
+
+    def get_asset_value_row(self, field_name: str, month: str) -> tuple[float, str] | None:
+        """Return (asset_value, recorded_at) for one active field+month, or None if absent."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT das.asset_value, das.recorded_at
+                   FROM debt_asset_snapshots das
+                   JOIN fields f ON f.id = das.field_id
+                   WHERE f.deactivated_at IS NULL
+                     AND f.name = ?
+                     AND das.month = ?""",
+                (field_name.lower(), month),
+            ).fetchone()
+        return (float(row[0]), row[1]) if row is not None else None
 
     def get_latest_values(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
