@@ -17,6 +17,8 @@ class HelpCommand(BaseCommand):
 
     commit                        Commit all pending staged updates to the database
     commit <n> [n ...]            Commit one or more pending updates by index
+    commit undo                   Reverse the most recent commit
+    commit undo <n>               Reverse the last N commits
 
     show / s                      Table of last 6 months across all fields
     show <n>                      Table of last N months across all fields

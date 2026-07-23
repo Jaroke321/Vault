@@ -67,6 +67,13 @@ Values are staged as pending commits and must be committed to be saved.
 
 - `commit` — commit all pending updates
 - `commit <n> [n ...]` — commit one or more specific pending updates by index
+- `commit undo` — reverse the most recent commit
+- `commit undo <n>` — reverse the last N commits
+
+Undo is a session-only, in-memory stack — it is not persisted across
+restarts. Reversing a commit restores the exact prior row (its value and
+original recorded timestamp) if one existed, or removes the row entirely if
+the commit had newly created it.
 
 #### Viewing Data
 
