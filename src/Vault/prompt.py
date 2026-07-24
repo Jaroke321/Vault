@@ -12,7 +12,14 @@ class ExitSignal(Exception):
 
 
 class Prompt:
-    """Base class for prompt engine."""
+    """Base class for prompt engine.
+
+    Note: `vault --test` pipes commands via stdin, so `sys.stdin.isatty()` is
+    always False there and `self.interactive` is always False in that harness.
+    Tab-completion, the usage-hint display, and history persistence are only
+    reachable in a real interactive session, so they can't be exercised by the
+    piped-stdin test flow — verify them manually (see README).
+    """
 
     def __init__(self, project_name, logger, cmd_dict, subcommands, command_usage,
                  history_path=None, state_data_viewer=None):
