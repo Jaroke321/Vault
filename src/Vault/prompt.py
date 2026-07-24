@@ -14,12 +14,16 @@ class ExitSignal(Exception):
 class Prompt:
     """Base class for prompt engine."""
 
-    def __init__(self, state_data_viewer=None, **kwargs):
+    def __init__(self, project_name, logger, cmd_dict, subcommands, command_usage,
+                 history_path=None, state_data_viewer=None):
 
+        self.project_name = project_name
+        self.logger = logger
+        self.cmd_dict = cmd_dict
+        self.subcommands = subcommands
+        self.command_usage = command_usage
+        self.history_path = history_path
         self.state_data_viewer = state_data_viewer
-
-        for k, v in kwargs.items():
-            setattr(self, k, v)
 
         self.interactive = readline is not None and sys.stdin.isatty()
         self._readline_initialized = False
