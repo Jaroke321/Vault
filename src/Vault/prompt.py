@@ -33,12 +33,7 @@ class Prompt:
 
         if self.interactive:
             self._setup_readline()
-            if self.history_path:
-                try:
-                    readline.read_history_file(self.history_path)
-                except FileNotFoundError:
-                    pass
-                readline.set_history_length(1000)
+            self._load_history()
 
         try:
             command_input = input(f"{self.project_name}/>")
@@ -68,14 +63,27 @@ class Prompt:
 
         finally:
             if self.interactive:
-                if self.history_path:
-                    try:
-                        Path(self.history_path).parent.mkdir(parents=True, exist_ok=True)
-                        readline.write_history_file(self.history_path)
-                    except OSError:
-                        pass
+                self._save_history()
 
         print("Exiting Vault...")
+
+    def _load_history(self):
+        if not self.history_path:
+            return
+        try:
+            readline.read_history_file(self.history_path)
+        except FileNotFoundError:
+            pass
+        readline.set_history_length(1000)
+
+    def _save_history(self):
+        if not self.history_path:
+            return
+        try:
+            Path(self.history_path).parent.mkdir(parents=True, exist_ok=True)
+            readline.write_history_file(self.history_path)
+        except OSError:
+            pass
 
     def _setup_readline(self):
         if self._readline_initialized:
