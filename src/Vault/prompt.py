@@ -98,6 +98,10 @@ class Prompt:
         self._readline_initialized = True
 
     def _build_completion_matches(self, text: str) -> list[str]:
+        # Assumes exactly one level of subcommands: a token-count heuristic against
+        # a flat dict[str, list[str]]. A command with a second level of subcommands
+        # won't error here — it'll silently complete against the wrong list. A
+        # token-path lookup would be needed to support deeper nesting.
         line = readline.get_line_buffer()
         begidx = readline.get_begidx()
         tokens_before = line[:begidx].split()
