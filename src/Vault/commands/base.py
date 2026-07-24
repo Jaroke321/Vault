@@ -62,12 +62,15 @@ class BaseCommand(ABC):
 
         return {alias: self.entry_point for alias in self.call_strs}
 
+    def usage_text(self) -> str:
+        """Return this command's detailed usage text."""
+        if self.USAGE:
+            return self.USAGE.strip()
+        return f"Usage: {self.call_strs[0]} — no detailed usage available."
+
     def usage(self):
         """Print this command's detailed usage text."""
-        if self.USAGE:
-            print(self.USAGE.strip())
-        else:
-            print(f"Usage: {self.call_strs[0]} — no detailed usage available.")
+        print(self.usage_text())
 
     # ------------------------------------------------------------------
     # Helpers

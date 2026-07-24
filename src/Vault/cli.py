@@ -53,6 +53,8 @@ class CLI:
         self.test_mode = test_mode
         self.project_name = "[TEST] Vault" if test_mode else "Vault"
         self.pending_commits = PendingCommits()
+        self.subcommands = {}
+        self.command_usage = {}
 
         # Need to init classes before using
         command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, DiffCommand, HelpCommand, CommodityCommand, ExportCommand, ImportCommand, ExitCommand]
@@ -65,7 +67,16 @@ class CLI:
         print_banner()
         if self.test_mode:
             print(f"{BOLD}{YELLOW}  *** TEST MODE — in-memory database, no changes will be saved ***{RESET}\n")
-        prompt = Prompt(project_name=self.project_name, logger=self.logger, state_data_viewer=self.pending_commits.render, cmd_dict=self.commands)
+        history_path = None if self.test_mode else "logs/.vault_history"
+        prompt = Prompt(
+            project_name=self.project_name,
+            logger=self.logger,
+            state_data_viewer=self.pending_commits.render,
+            cmd_dict=self.commands,
+            subcommands=self.subcommands,
+            command_usage=self.command_usage,
+            history_path=history_path,
+        )
         prompt.render()
 
     # ------------------------------------------------------------------
@@ -76,9 +87,13 @@ class CLI:
 
         commands = {}
         owners = {}
+        self.subcommands = {}
+        self.command_usage = {}
 
         for cls in command_class_list:
             instance = cls(self.db, self.logger, self.price_fetcher, self.pending_commits)
+            usage = instance.usage_text()
+            subcommand_names = list(instance.sub_commands.keys()) if instance.sub_commands else None
             for name, entry_point in instance.init_command().items():
                 if name in commands:
                     raise ValueError(
@@ -86,6 +101,9 @@ class CLI:
                     )
                 commands[name] = self._wrap_entry_point(entry_point, instance)
                 owners[name] = cls.__name__
+                if subcommand_names:
+                    self.subcommands[name] = subcommand_names
+                self.command_usage[name] = usage
 
         return commands
 
