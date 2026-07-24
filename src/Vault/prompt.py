@@ -24,6 +24,7 @@ class Prompt:
         self.command_usage = command_usage
         self.history_path = history_path
         self.state_data_viewer = state_data_viewer
+        self._prompt_str = f"{project_name}/>"
 
         self.interactive = readline is not None and sys.stdin.isatty()
         self._readline_initialized = False
@@ -36,7 +37,7 @@ class Prompt:
             self._load_history()
 
         try:
-            command_input = input(f"{self.project_name}/>")
+            command_input = input(self._prompt_str)
 
             while True:
 
@@ -59,7 +60,7 @@ class Prompt:
                 if(self.state_data_viewer):
                     self.state_data_viewer()
 
-                command_input = input(f"{self.project_name}/>")
+                command_input = input(self._prompt_str)
 
         finally:
             if self.interactive:
@@ -137,8 +138,7 @@ class Prompt:
             self._redisplay_prompt()
 
     def _redisplay_prompt(self):
-        prompt = f"{self.project_name}/>"
-        print(prompt + readline.get_line_buffer(), end="")
+        print(self._prompt_str + readline.get_line_buffer(), end="")
         sys.stdout.flush()
 
     def validate_command(self, command: str):
