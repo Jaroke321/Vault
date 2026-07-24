@@ -39,6 +39,7 @@ class HelpCommand(BaseCommand):
     commodity override <field> <price>    Lock a manual price per unit for this field
     commodity override <field> clear      Remove price lock (use live/cached price)
     commodity list                        Show all tagged fields with current prices and source
+    commodity options                     Show known commodity symbols, names, and units
     commodity refresh                     Re-fetch live prices for all tagged fields
 
     help / h                      Show this help message

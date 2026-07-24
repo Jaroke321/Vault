@@ -20,10 +20,10 @@ class CommodityCommand(BaseCommand):
         if sub in self.sub_commands:
             self.sub_commands[sub](options[1:])
         else:
-            print(f"Unknown subcommand '{sub}'. Use: tag, untag, override, list, refresh")
+            print(f"Unknown subcommand '{sub}'. Use: tag, untag, override, list, options, refresh")
 
     def usage(self):
-        print("Usage: commodity tag <field> <commodity> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity refresh")
+        print("Usage: commodity tag <field> <commodity> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity options | commodity refresh")
 
     ####################################
     # Sub-commands
@@ -106,6 +106,27 @@ class CommodityCommand(BaseCommand):
             self.logger.log(f"Commodity override set: {field_name} -> {price}")
         else:
             print(f"No commodity tag found for '{field_name}'. Use 'commodity tag' first.")
+
+    def sub_options(self, options: list):
+        """List all known commodity symbols, their name aliases, and unit, grouped by
+        category. Static reference data — no DB or price_fetcher access, so this works
+        identically with or without --test/network."""
+
+        aliases_by_symbol: dict[str, list[str]] = {}
+        for name, symbol in PriceFetcher.NAME_TO_SYMBOL.items():
+            aliases_by_symbol.setdefault(symbol, []).append(name)
+
+        current_cat = None
+        for symbol in PriceFetcher.SYMBOL_TO_TICKER:
+            category = PriceFetcher.SYMBOL_TO_CATEGORY[symbol]
+            if category != current_cat:
+                print(f"\n  {self.cat_label(category)}")
+                current_cat = category
+            names = ", ".join(aliases_by_symbol.get(symbol, []))
+            unit = PriceFetcher.SYMBOL_TO_UNIT[symbol]
+            print(f"    {symbol:<6}{names:<22}{unit}")
+        print("\n  Tag a field with a symbol or name, e.g. 'commodity tag <field> XAU' or 'commodity tag <field> gold'.")
+        print("  Any other input is treated as a pass-through stock/ETF ticker, validated live at tag time.\n")
 
     def sub_list(self, options: list):
 

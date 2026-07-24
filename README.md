@@ -104,21 +104,33 @@ On import, fields and categories named in the header that don't exist yet are au
 
 Fields with non-monetary units (e.g. `oz`, `g`, `shares`) can be tagged with a commodity symbol or a stock/ETF ticker. On startup, Vault fetches live market prices and uses them to convert quantities to USD in the `summary` output. Prices are cached locally so the last known value is used if a fetch fails.
 
-- `commodity tag <field> <symbol>` — tag a field as tracking a commodity (`XAU`, `XAG`, `XPT`, `XPD`) or an arbitrary stock/ETF ticker (e.g. `AAPL`)
+- `commodity tag <field> <symbol>` — tag a field as tracking a commodity (run `commodity options` for the full list) or an arbitrary stock/ETF ticker (e.g. `AAPL`)
 - `commodity untag <field>` — remove the commodity tag from a field
 - `commodity override <field> <price>` — lock a manual price per unit (takes precedence over live prices)
 - `commodity override <field> clear` — remove the price lock and resume using live/cached prices
 - `commodity list` — show all tagged fields with their current price and source (live, cached, or override)
+- `commodity options` — list all known commodity symbols, name aliases, and units, grouped by category (static reference data; works without network)
 - `commodity refresh` — re-fetch live prices mid-session
 
 **Supported symbols:**
 
-| Symbol | Commodity  | Unit        |
-|--------|------------|-------------|
-| XAU    | Gold       | troy oz     |
-| XAG    | Silver     | troy oz     |
-| XPT    | Platinum   | troy oz     |
-| XPD    | Palladium  | troy oz     |
+| Symbol | Name(s)              | Unit        |
+|--------|----------------------|-------------|
+| XAU    | gold                 | troy oz     |
+| XAG    | silver               | troy oz     |
+| XPT    | platinum             | troy oz     |
+| XPD    | palladium            | troy oz     |
+| HG     | copper               | lb          |
+| CL     | oil, crude oil, wti  | barrel      |
+| BZ     | brent                | barrel      |
+| NG     | natural gas          | MMBtu       |
+| ZW     | wheat                | bushel      |
+| ZC     | corn                 | bushel      |
+| ZS     | soybeans, soybean    | bushel      |
+| KC     | coffee               | lb          |
+| SB     | sugar                | lb          |
+| CC     | cocoa                | metric ton  |
+| CT     | cotton               | lb          |
 
 Any other input is treated as a pass-through stock/ETF ticker (a stock's symbol is already its own ticker, unlike the futures-style commodities above). Unlike the fixed list, pass-through tickers have no static typo protection, so `commodity tag` validates them with a live lookup at tag time and rejects anything that doesn't resolve — this means tagging a stock/ETF requires network access, unlike the instant offline tag for `XAU`/etc.
 
