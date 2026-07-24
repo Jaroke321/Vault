@@ -33,10 +33,9 @@ class Prompt:
 
         if self.interactive:
             self._setup_readline()
-            history_path = getattr(self, "history_path", None)
-            if history_path:
+            if self.history_path:
                 try:
-                    readline.read_history_file(history_path)
+                    readline.read_history_file(self.history_path)
                 except FileNotFoundError:
                     pass
                 readline.set_history_length(1000)
@@ -69,11 +68,10 @@ class Prompt:
 
         finally:
             if self.interactive:
-                history_path = getattr(self, "history_path", None)
-                if history_path:
+                if self.history_path:
                     try:
-                        Path(history_path).parent.mkdir(parents=True, exist_ok=True)
-                        readline.write_history_file(history_path)
+                        Path(self.history_path).parent.mkdir(parents=True, exist_ok=True)
+                        readline.write_history_file(self.history_path)
                     except OSError:
                         pass
 
@@ -101,7 +99,7 @@ class Prompt:
             )
 
         cmd = tokens_before[0]
-        subcommands = getattr(self, "subcommands", {}).get(cmd, [])
+        subcommands = self.subcommands.get(cmd, [])
         return sorted(name for name in subcommands if name.startswith(text))
 
     def _complete(self, text, state):
@@ -118,7 +116,7 @@ class Prompt:
 
         if begidx == 0 and len(matches) == 1:
             cmd = matches[0]
-            usage = getattr(self, "command_usage", {}).get(cmd)
+            usage = self.command_usage.get(cmd)
             if usage and line[:begidx] + cmd == line.rstrip():
                 print()
                 print(usage)
