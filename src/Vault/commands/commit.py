@@ -47,7 +47,7 @@ class CommitCommand(BaseCommand):
         batch = []
 
         for current_commit in track(self.commits, description="Commiting Changes..."):
-            time.sleep(0.5)
+            time.sleep(0.25)
             self._apply_and_capture(current_commit, batch)
 
         if batch:
