@@ -69,6 +69,7 @@ Values are staged as pending commits and must be committed to be saved.
 - `commit <n> [n ...]` — commit one or more specific pending updates by index
 - `commit undo` — reverse the most recent commit
 - `commit undo <n>` — reverse the last N commits
+- `commit history` — show past commits, most recent first, numbered to match `commit undo <n>`
 
 Undo is a session-only, in-memory stack — it is not persisted across
 restarts. Reversing a commit restores the exact prior row (its value and

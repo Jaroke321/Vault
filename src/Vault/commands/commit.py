@@ -1,5 +1,6 @@
 from .base import BaseCommand
 from rich.progress import track
+import datetime
 import time
 
 class CommitCommand(BaseCommand):
@@ -40,7 +41,7 @@ class CommitCommand(BaseCommand):
             prior = self.db.get_asset_value_row(field_name, month)
             self.db.record_asset_value(field_name, month, value)
 
-        batch.append((kind, field_name, month, prior))
+        batch.append((kind, field_name, month, value, prior))
 
     def _commit_all(self):
         batch = []
@@ -50,7 +51,7 @@ class CommitCommand(BaseCommand):
             self._apply_and_capture(current_commit, batch)
 
         if batch:
-            self._undo_stack.append(batch)
+            self._undo_stack.append({"timestamp": datetime.datetime.now(), "entries": batch})
 
         self.commits.clear()
 
@@ -74,7 +75,7 @@ class CommitCommand(BaseCommand):
                 pass
 
         if batch:
-            self._undo_stack.append(batch)
+            self._undo_stack.append({"timestamp": datetime.datetime.now(), "entries": batch})
 
         # Remove from list everything we just commited
         for i in sorted(successful_commits, reverse=True):
@@ -96,24 +97,52 @@ class CommitCommand(BaseCommand):
         pop_count = min(count, len(self._undo_stack))
 
         for _ in range(pop_count):
-            batch = self._undo_stack.pop()
-            for kind, field_name, month, prior in reversed(batch):
+            batch = self._undo_stack.pop()["entries"]
+            for kind, field_name, month, _value, prior in reversed(batch):
                 if prior is None:
                     if kind == "value":
                         self.db.delete_value(field_name, month)
                     else:
                         self.db.delete_asset_value(field_name, month)
                 else:
-                    value, recorded_at = prior
+                    prior_value, recorded_at = prior
                     if kind == "value":
-                        self.db.record_value(field_name, month, value, recorded_at)
+                        self.db.record_value(field_name, month, prior_value, recorded_at)
                     else:
-                        self.db.record_asset_value(field_name, month, value, recorded_at)
+                        self.db.record_asset_value(field_name, month, prior_value, recorded_at)
 
         if pop_count < count:
             print(f"Only {pop_count} commit(s) to undo — reversed all of them.")
         else:
             print(f"Reversed {pop_count} commit(s).")
 
+    def sub_history(self, options):
+        if not self._undo_stack:
+            print("No commits to show.")
+            return
+
+        headers = ["#", "When", "Field", "Month", "Value"]
+        rows = []
+        for i, batch in enumerate(reversed(self._undo_stack), start=1):
+            when = batch["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+            for _kind, field_name, month, value, _prior in batch["entries"]:
+                rows.append([str(i), when, field_name, month, str(value)])
+
+        widths = [len(h) for h in headers]
+        for row in rows:
+            for j, cell in enumerate(row):
+                widths[j] = max(widths[j], len(cell))
+
+        fmt = "  " + "  ".join(f"{{:<{w}}}" for w in widths)
+        sep = "  " + "  ".join("-" * w for w in widths)
+
+        print(fmt.format(*headers))
+        print(sep)
+        for row in rows:
+            line = fmt.format(*row)
+            colored_num = f"{self.BOLD}{self.MAGENTA}{row[0]}{self.RESET}"
+            line = line.replace(row[0], colored_num, 1)
+            print(line)
+
     def usage(self):
-        print("Usage: commit | commit <n> [n ...] | commit undo [n]")
+        print("Usage: commit | commit <n> [n ...] | commit undo [n] | commit history")
