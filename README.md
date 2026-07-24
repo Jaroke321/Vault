@@ -170,6 +170,19 @@ summary
 - `<command> usage` — detailed help for any command (e.g. `update usage`)
 - `exit` / `quit` / `q` — exit the application
 
+#### Tab Completion & History
+
+- `<TAB>` completes command names at the start of a line, and subcommand names once a top-level command has been typed
+- `<TAB>` on a line that already unambiguously matches one command prints that command's usage text
+- Command history persists across sessions in `logs/.vault_history` (skipped in `--test` mode)
+
+This is only active in a real interactive terminal — `--test` mode pipes commands via
+stdin, so it can't exercise tab-completion or history persistence. To check manually:
+run `vault` (without `--test`), press `<TAB>` at the empty prompt to see command
+completions, type a command name and press `<TAB>` to see its usage text, type a
+top-level command followed by a space and `<TAB>` to see subcommand completions, then
+`exit` and restart `vault` to confirm prior commands are recalled with the up arrow.
+
 ## Project Structure
 
 ```
