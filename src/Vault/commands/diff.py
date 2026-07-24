@@ -5,6 +5,11 @@ class DiffCommand(BaseCommand):
 
     call_str = ["diff", "d"]
 
+    USAGE = """
+  diff <m1> <y1> <m2> <y2>      Compare all fields between two months
+  diff <field> <m1> <y1> <m2> <y2>   Compare one field between two months
+"""
+
     COL_W = 14
     NAME_W = 22
 
@@ -20,7 +25,7 @@ class DiffCommand(BaseCommand):
                 options[0], options[1], options[2], options[3], options[4]
             )
         else:
-            self._usage()
+            self.usage()
 
     ####################################
     # Sub-commands
@@ -46,12 +51,6 @@ class DiffCommand(BaseCommand):
         if month1 is None or month2 is None:
             return
         self._diff_single_field(field_name, month1, month2)
-
-    def _usage(self):
-        print(
-            "Usage: diff <m1> <y1> <m2> <y2> | diff <field> <m1> <y1> <m2> <y2>"
-        )
-
     def _parse_month_pair(self, raw_m1, raw_y1, raw_m2, raw_y2):
         month1 = self._parse_month_year(raw_m1, raw_y1)
         if month1 is None:

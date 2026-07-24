@@ -4,6 +4,10 @@ class SummaryCommand(BaseCommand):
 
     call_str = "summary" # Tells the prompt the string command in order to call this class
 
+    USAGE = """
+  summary                       Net worth snapshot (assets minus debts)
+"""
+
     DEBT_CATEGORIES = {"debt"}
     MONETARY_UNITS = {"$", "€", "£", "¥"}
 

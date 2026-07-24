@@ -9,6 +9,10 @@ class ImportCommand(BaseCommand):
     call_str = "import"
     mutates_commits = True
 
+    USAGE = """
+  import csv <filename>         Import a wide-format CSV back into the database
+"""
+
     def entry_point(self, options: list):
         """Function call that prompt will made when user enters in the call_str. This function is responsible for
         directing input to the correct sub commands of this class."""
@@ -22,9 +26,6 @@ class ImportCommand(BaseCommand):
             self.sub_commands[sub](options[1:])
         else:
             print(f"Unknown subcommand '{sub}'. Use: csv")
-
-    def usage(self):
-        print("Usage: import csv <filename>")
 
     ####################################
     # Sub-commands
