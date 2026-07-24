@@ -53,6 +53,8 @@ class CLI:
         self.test_mode = test_mode
         self.project_name = "[TEST] Vault" if test_mode else "Vault"
         self.pending_commits = PendingCommits()
+        self.subcommands = {}
+        self.command_usage = {}
 
         # Need to init classes before using
         command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, DiffCommand, HelpCommand, CommodityCommand, ExportCommand, ImportCommand, ExitCommand]
