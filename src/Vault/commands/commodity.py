@@ -6,6 +6,16 @@ class CommodityCommand(BaseCommand):
 
     call_str = "commodity" # Tells the prompt the string command in order to call this class
 
+    USAGE = """
+  commodity tag <field> <commodity>     Tag a field as a commodity or stock/ETF (e.g. 'gold', 'XAU', or 'AAPL')
+  commodity untag <field>               Remove commodity tag from a field
+  commodity override <field> <price>    Lock a manual price per unit for this field
+  commodity override <field> clear      Remove price lock (use live/cached price)
+  commodity list                        Show all tagged fields with current prices and source
+  commodity options                     Show known commodity symbols, names, and units
+  commodity refresh                     Re-fetch live prices for all tagged fields
+"""
+
     def entry_point(self, options: list):
         """Function call that prompt will made when user enters in the call_str. This function is responsible for
         directing input to the correct sub commands of this class."""
@@ -21,9 +31,6 @@ class CommodityCommand(BaseCommand):
             self.sub_commands[sub](options[1:])
         else:
             print(f"Unknown subcommand '{sub}'. Use: tag, untag, override, list, options, refresh")
-
-    def usage(self):
-        print("Usage: commodity tag <field> <commodity> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity options | commodity refresh")
 
     ####################################
     # Sub-commands

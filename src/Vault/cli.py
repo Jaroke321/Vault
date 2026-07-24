@@ -94,6 +94,10 @@ class CLI:
         with whether that command mutates the shared pending-commits list."""
 
         def wrapped(options):
+            if options and options[0] == "usage":
+                instance.usage()
+                self.pending_commits.suppress_next_render()
+                return
             entry_point(options)
             if not instance.mutates_commits:
                 self.pending_commits.suppress_next_render()

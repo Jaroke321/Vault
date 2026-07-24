@@ -7,6 +7,11 @@ class ExportCommand(BaseCommand):
 
     call_str = "export" # Tells the prompt the string command in order to call this class
 
+    USAGE = """
+  export csv                    Dump full recorded history to CSV (stdout)
+  export csv <filename>         Dump full recorded history to CSV (file)
+"""
+
     def entry_point(self, options: list):
         """Function call that prompt will made when user enters in the call_str. This function is responsible for
         directing input to the correct sub commands of this class."""
@@ -22,9 +27,6 @@ class ExportCommand(BaseCommand):
             self.sub_commands[sub](options[1:])
         else:
             print(f"Unknown subcommand '{sub}'. Use: csv")
-
-    def usage(self):
-        print("Usage: export csv [filename]")
 
     ####################################
     # Sub-commands

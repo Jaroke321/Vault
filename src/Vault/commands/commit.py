@@ -8,6 +8,14 @@ class CommitCommand(BaseCommand):
     call_str = "commit" # Tells the prompt the string command in order to call this class
     mutates_commits = True
 
+    USAGE = """
+  commit                        Commit all pending staged updates to the database
+  commit <n> [n ...]            Commit one or more pending updates by index
+  commit undo                   Reverse the most recent commit
+  commit undo <n>               Reverse the last N commits
+  commit history                Show past commits, most recent first (reference for commit undo)
+"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._undo_stack = []
@@ -143,6 +151,3 @@ class CommitCommand(BaseCommand):
             colored_num = f"{self.BOLD}{self.MAGENTA}{row[0]}{self.RESET}"
             line = line.replace(row[0], colored_num, 1)
             print(line)
-
-    def usage(self):
-        print("Usage: commit | commit <n> [n ...] | commit undo [n] | commit history")

@@ -46,6 +46,8 @@ This starts an interactive prompt:
 Vault/>
 ```
 
+Type `<command> usage` for detailed help on any command (e.g. `update usage`).
+
 ### Available Commands
 
 #### Field Management
@@ -165,6 +167,7 @@ summary
 #### Other
 
 - `help` — display available commands
+- `<command> usage` — detailed help for any command (e.g. `update usage`)
 - `exit` / `quit` / `q` — exit the application
 
 ## Project Structure

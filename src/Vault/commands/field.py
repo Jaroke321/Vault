@@ -4,14 +4,20 @@ class FieldCommand(BaseCommand):
 
     call_str = "field" # Tells the prompt the string command in order to call this class
 
+    USAGE = """
+  field add <category> <name>          Register a new tracked field
+  field remove <name>                  Deactivate a field (history preserved)
+  field list                           Show all active fields by category
+  field set <category> unit <unit>     Set display unit for a category (default: $)
+"""
+
     def entry_point(self, options: list):
         """Function call that prompt will made when user enters in the call_str. This function is responsible for
         directing input to the correct sub commands of this class."""
 
         # Error handling
         if not options:
-            print("Usage: field <subcommand>")
-            print(f"  Subcommands: {', '.join(self.sub_commands.keys())}") 
+            self.usage()
             return
         
         # Business logic

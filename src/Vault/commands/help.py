@@ -4,6 +4,11 @@ class HelpCommand(BaseCommand):
 
     call_str = ["help", "h"] # Tells the prompt the string command(s) in order to call this class
 
+    USAGE = """
+  help / h                      Show all Vault commands
+  <command> usage               Detailed help for any command
+"""
+
     HELP_TEXT = """
   Vault Commands:
     field add <category> <name>          Register a new tracked field
@@ -44,6 +49,7 @@ class HelpCommand(BaseCommand):
     commodity refresh                     Re-fetch live prices for all tagged fields
 
     help / h                      Show this help message
+    <command> usage               Detailed help for any command
     exit / quit / q               Exit Vault
         """
 

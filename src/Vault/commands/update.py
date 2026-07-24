@@ -6,6 +6,12 @@ class UpdateCommand(BaseCommand):
     call_str = "update" # Tells the prompt the string command in order to call this class
     mutates_commits = True
 
+    USAGE = """
+  update                               Interactively stage values for all fields (default: current month)
+  update <field> <value> [-m YYYY-MM]  Stage a value for a single field
+  update <field> <value> <asset> [-m YYYY-MM]  Stage value + asset for a debt field
+"""
+
     def entry_point(self, options: list):
         """Function call that prompt will made when user enters in the call_str. This function is responsible for
         directing input to the correct sub commands of this class."""
@@ -100,10 +106,3 @@ class UpdateCommand(BaseCommand):
             
             else:
                 print("[ERROR] Invalid asset number.")
-
-    def usage(self):
-        print(
-            "Usage: update | "
-            "update <field_name> <value> [-m YYYY-MM] | "
-            "update <debt_field> <balance> <asset_value> [-m YYYY-MM]"
-        )

@@ -4,6 +4,13 @@ class ShowCommand(BaseCommand):
 
     call_str = ["show", "s"] # Tells the prompt the string command(s) in order to call this class
 
+    USAGE = """
+  show / s                      Table of last 6 months across all fields
+  show <n>                      Table of last N months across all fields
+  show <field>                  Month-over-month trend for one field
+  show <field> <n>              Trend for one field over last N months
+"""
+
     DEFAULT_MONTHS = 6
 
     def entry_point(self, options: list):

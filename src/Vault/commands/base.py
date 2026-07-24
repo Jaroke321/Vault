@@ -24,6 +24,9 @@ class BaseCommand(ABC):
     # decide whether the commits table should reprint after the command runs.
     mutates_commits = False
 
+    # Detailed usage text printed by `<command> usage` and internal error paths.
+    USAGE: str | None = None
+
     def __init__(self, db, logger, price_fetcher=None, commits=None):
         self.db = db
         self.logger = logger
@@ -59,6 +62,12 @@ class BaseCommand(ABC):
 
         return {alias: self.entry_point for alias in self.call_strs}
 
+    def usage(self):
+        """Print this command's detailed usage text."""
+        if self.USAGE:
+            print(self.USAGE.strip())
+        else:
+            print(f"Usage: {self.call_strs[0]} — no detailed usage available.")
 
     # ------------------------------------------------------------------
     # Helpers
