@@ -73,7 +73,7 @@ class Prompt:
         try:
             readline.read_history_file(self.history_path)
         except FileNotFoundError:
-            pass
+            self.logger.log(f"[history] no existing history file at {self.history_path}, starting fresh")
         readline.set_history_length(1000)
 
     def _save_history(self):
@@ -82,8 +82,8 @@ class Prompt:
         try:
             Path(self.history_path).parent.mkdir(parents=True, exist_ok=True)
             readline.write_history_file(self.history_path)
-        except OSError:
-            pass
+        except OSError as e:
+            self.logger.log(f"[history] failed to write history file {self.history_path}: {e}")
 
     def _setup_readline(self):
         if self._readline_initialized:
