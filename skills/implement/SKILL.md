@@ -39,7 +39,8 @@ state after each step where the plan calls that out.
 A quick smoke test while wiring things up — e.g. one `vault --test` run to
 confirm a command doesn't crash — is fine if it helps you implement
 correctly. This is not the `test` skill: don't scope it to the diff, don't
-chase edge cases, don't write a report.
+chase edge cases, don't write a report. if a smoke test is not necessary, then
+do not run one just because, skip.
 
 ## Step 3 — Cleanup pass
 

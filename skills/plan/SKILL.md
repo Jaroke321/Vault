@@ -111,12 +111,8 @@ Order steps so each is independently coherent (e.g. schema/model changes
 before the commands that use them; shared helpers before call sites) and
 the codebase is left in a working state after each one if the plan is
 large enough that it might be implemented across multiple sessions.
-
-## Test plan
-
-<Which commands/paths from the `test` skill's floor table this will
-exercise, and any specific edge cases from the Ripple effects section that
-need a dedicated session — not a full re-explanation of the test skill.>
+each step in the plan should be small increments towards the overall goal.
+Prefer many small steps to few larger ones.
 
 ## Open questions
 

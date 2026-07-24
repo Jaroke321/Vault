@@ -34,11 +34,12 @@ class HelpCommand(BaseCommand):
     export csv <filename>         Dump full recorded history to CSV (file)
     import csv <filename>         Import a wide-format CSV back into the database
 
-    commodity tag <field> <commodity>     Tag a field as a commodity (e.g. 'gold' or 'XAU')
+    commodity tag <field> <commodity>     Tag a field as a commodity or stock/ETF (e.g. 'gold', 'XAU', or 'AAPL')
     commodity untag <field>               Remove commodity tag from a field
     commodity override <field> <price>    Lock a manual price per unit for this field
     commodity override <field> clear      Remove price lock (use live/cached price)
     commodity list                        Show all tagged fields with current prices and source
+    commodity options                     Show known commodity symbols, names, and units
     commodity refresh                     Re-fetch live prices for all tagged fields
 
     help / h                      Show this help message

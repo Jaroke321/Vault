@@ -13,25 +13,45 @@ class PriceFetcher:
     """
 
     SYMBOL_TO_TICKER = {
-        # Precious metals (USD / troy oz)
+        # Precious metals
         "XAU": "GC=F",
         "XAG": "SI=F",
         "XPT": "PL=F",
         "XPD": "PA=F",
         # Base metals
-        "HG":  "HG=F",   # Copper futures (USD / lb)
+        "HG":  "HG=F",   # Copper futures
         # Energy
-        "CL":  "CL=F",   # WTI Crude Oil futures (USD / barrel)
-        "BZ":  "BZ=F",   # Brent Crude futures (USD / barrel)
-        "NG":  "NG=F",   # Natural Gas futures (USD / MMBtu)
+        "CL":  "CL=F",   # WTI Crude Oil futures
+        "BZ":  "BZ=F",   # Brent Crude futures
+        "NG":  "NG=F",   # Natural Gas futures
         # Agricultural
-        "ZW":  "ZW=F",   # Wheat futures (USD / bushel)
-        "ZC":  "ZC=F",   # Corn futures (USD / bushel)
-        "ZS":  "ZS=F",   # Soybean futures (USD / bushel)
-        "KC":  "KC=F",   # Coffee futures (USD / lb)
-        "SB":  "SB=F",   # Sugar futures (USD / lb)
-        "CC":  "CC=F",   # Cocoa futures (USD / metric ton)
-        "CT":  "CT=F",   # Cotton futures (USD / lb)
+        "ZW":  "ZW=F",   # Wheat futures
+        "ZC":  "ZC=F",   # Corn futures
+        "ZS":  "ZS=F",   # Soybean futures
+        "KC":  "KC=F",   # Coffee futures
+        "SB":  "SB=F",   # Sugar futures
+        "CC":  "CC=F",   # Cocoa futures
+        "CT":  "CT=F",   # Cotton futures
+    }
+
+    # Category + display unit per symbol. Static reference data for `commodity
+    # options`; groupings mirror the comment sections above — keep all three
+    # collections in sync when adding a symbol. All prices are USD.
+    SYMBOL_TO_CATEGORY = {
+        "XAU": "Precious metals", "XAG": "Precious metals",
+        "XPT": "Precious metals", "XPD": "Precious metals",
+        "HG":  "Base metals",
+        "CL":  "Energy", "BZ": "Energy", "NG": "Energy",
+        "ZW":  "Agricultural", "ZC": "Agricultural", "ZS": "Agricultural",
+        "KC":  "Agricultural", "SB": "Agricultural", "CC": "Agricultural", "CT": "Agricultural",
+    }
+
+    SYMBOL_TO_UNIT = {
+        "XAU": "troy oz", "XAG": "troy oz", "XPT": "troy oz", "XPD": "troy oz",
+        "HG":  "lb",
+        "CL":  "barrel", "BZ": "barrel", "NG": "MMBtu",
+        "ZW":  "bushel", "ZC": "bushel", "ZS": "bushel",
+        "KC":  "lb", "SB": "lb", "CC": "metric ton", "CT": "lb",
     }
 
     NAME_TO_SYMBOL = {
@@ -60,15 +80,19 @@ class PriceFetcher:
     }
 
     @classmethod
-    def resolve_symbol(cls, raw: str) -> str | None:
-        """Resolve a friendly name or symbol to a canonical symbol, or None if unrecognized."""
+    def resolve_symbol(cls, raw: str) -> str:
+        """Resolve a friendly name or symbol to a canonical commodity symbol.
+
+        Unrecognized input passes through as a literal ticker (e.g. a stock/ETF
+        symbol, which is already its own ticker) rather than returning None.
+        """
         key = raw.lower()
         if key in cls.NAME_TO_SYMBOL:
             return cls.NAME_TO_SYMBOL[key]
         upper = raw.upper()
         if upper in cls.SYMBOL_TO_TICKER:
             return upper
-        return None
+        return raw.strip().upper()
 
     def __init__(self, db, logger):
         self.db = db
@@ -139,6 +163,13 @@ class PriceFetcher:
 
         return None
 
+    def probe_symbol(self, symbol: str) -> float | None:
+        """Live-fetch a single symbol's price, or None if it can't be resolved.
+
+        Used by 'commodity tag' to validate a pass-through ticker at tag time.
+        """
+        return self._fetch_symbol(symbol)
+
     def get_fetch_status(self) -> list[tuple]:
         """Return display info for each tagged field: (field_name, symbol, price, source, cached_at).
 
@@ -158,10 +189,9 @@ class PriceFetcher:
         return result
 
     def _fetch_symbol(self, symbol: str) -> float | None:
-        ticker_name = self.SYMBOL_TO_TICKER.get(symbol)
-        if ticker_name is None:
-            self.logger.log(f"No ticker mapping for commodity symbol '{symbol}'")
-            return None
+        # Pass-through tickers (stocks/ETFs) aren't in SYMBOL_TO_TICKER — a stock's
+        # symbol is already its yfinance ticker, unlike futures-style commodities.
+        ticker_name = self.SYMBOL_TO_TICKER.get(symbol, symbol)
         try:
             ticker = yf.Ticker(ticker_name)
             price = ticker.fast_info.last_price

@@ -1,3 +1,4 @@
+import datetime
 from .base import BaseCommand
 from ..price_fetcher import PriceFetcher
 
@@ -19,10 +20,10 @@ class CommodityCommand(BaseCommand):
         if sub in self.sub_commands:
             self.sub_commands[sub](options[1:])
         else:
-            print(f"Unknown subcommand '{sub}'. Use: tag, untag, override, list, refresh")
+            print(f"Unknown subcommand '{sub}'. Use: tag, untag, override, list, options, refresh")
 
     def usage(self):
-        print("Usage: commodity tag <field> <commodity> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity refresh")
+        print("Usage: commodity tag <field> <commodity> | commodity untag <field> | commodity override <field> <price>|clear | commodity list | commodity options | commodity refresh")
 
     ####################################
     # Sub-commands
@@ -45,15 +46,24 @@ class CommodityCommand(BaseCommand):
         # Business logic
         field_name = options[0]
         symbol = PriceFetcher.resolve_symbol(options[1])
-        if symbol is None:
-            print(f"Unknown commodity '{options[1]}'.")
-            print(f"  Names:   {', '.join(sorted(PriceFetcher.NAME_TO_SYMBOL.keys()))}")
-            print(f"  Symbols: {', '.join(sorted(PriceFetcher.SYMBOL_TO_TICKER.keys()))}")
-            return
+
+        # Known commodity symbols (metals, etc.) tag instantly, same as always — the
+        # static list is still their typo safety net. Pass-through tickers (anything
+        # not in the static maps) have no such list, so validate them live instead.
+        live_price = None
+        if symbol not in PriceFetcher.SYMBOL_TO_TICKER and self.price_fetcher is not None:
+            live_price = self.price_fetcher.probe_symbol(symbol)
+            if live_price is None:
+                print(f"Could not resolve '{options[1]}' as a live ticker — check the symbol and your connection.")
+                return
+
         success = self.db.set_commodity(field_name, symbol)
         if success:
             print(f"Field '{field_name}' tagged as {symbol}.")
             self.logger.log(f"Commodity tag set: {field_name} -> {symbol}")
+            if live_price is not None:
+                now = datetime.datetime.now().isoformat()
+                self.db.set_commodity_cache(field_name, live_price, now)
         else:
             print(f"No active field named '{field_name}'.")
 
@@ -96,6 +106,27 @@ class CommodityCommand(BaseCommand):
             self.logger.log(f"Commodity override set: {field_name} -> {price}")
         else:
             print(f"No commodity tag found for '{field_name}'. Use 'commodity tag' first.")
+
+    def sub_options(self, options: list):
+        """List all known commodity symbols, their name aliases, and unit, grouped by
+        category. Static reference data — no DB or price_fetcher access, so this works
+        identically with or without --test/network."""
+
+        aliases_by_symbol: dict[str, list[str]] = {}
+        for name, symbol in PriceFetcher.NAME_TO_SYMBOL.items():
+            aliases_by_symbol.setdefault(symbol, []).append(name)
+
+        current_cat = None
+        for symbol in PriceFetcher.SYMBOL_TO_TICKER:
+            category = PriceFetcher.SYMBOL_TO_CATEGORY[symbol]
+            if category != current_cat:
+                print(f"\n  {self.cat_label(category)}")
+                current_cat = category
+            names = ", ".join(aliases_by_symbol.get(symbol, []))
+            unit = PriceFetcher.SYMBOL_TO_UNIT[symbol]
+            print(f"    {symbol:<6}{names:<22}{unit}")
+        print("\n  Tag a field with a symbol or name, e.g. 'commodity tag <field> XAU' or 'commodity tag <field> gold'.")
+        print("  Any other input is treated as a pass-through stock/ETF ticker, validated live at tag time.\n")
 
     def sub_list(self, options: list):
 

@@ -518,6 +518,23 @@ class DBHandler:
             conn.commit()
             return True
 
+    def set_commodity_cache(self, field_name: str, price: float, timestamp: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT cp.id FROM commodity_prices cp
+                   JOIN fields f ON f.id = cp.field_id
+                   WHERE f.name = ?""",
+                (field_name.lower(),)
+            ).fetchone()
+            if row is None:
+                return False
+            conn.execute(
+                "UPDATE commodity_prices SET cached_price = ?, cached_at = ? WHERE id = ?",
+                (price, timestamp, row[0])
+            )
+            conn.commit()
+            return True
+
     def get_commodity_fields(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
