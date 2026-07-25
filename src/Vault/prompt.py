@@ -113,7 +113,9 @@ class Prompt:
         begidx = readline.get_begidx()
         tokens_before = line[:begidx].split()
 
-        if len(tokens_before) <= 1 and not line[:begidx].endswith(" "):
+        if not tokens_before or ( 
+            len(tokens_before) <= 1 and not line[:begidx].endswith(" ") ):
+            
             return sorted(
                 name for name in self.cmd_dict if name.startswith(text)
             )

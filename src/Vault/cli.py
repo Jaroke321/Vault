@@ -85,10 +85,10 @@ class CLI:
 
     def load_command_classes(self, command_class_list: list) -> dict:
 
-        commands = {}
-        owners = {}
-        self.subcommands = {}
-        self.command_usage = {}
+        commands = {}            # Maps command name to entry point
+        owners = {}              # Maps command name to command class name, used for error checking
+        self.subcommands = {}    # Maps command name to list of subcommand names
+        self.command_usage = {}  # Maps command name to usage text
 
         for cls in command_class_list:
             instance = cls(self.db, self.logger, self.price_fetcher, self.pending_commits)
