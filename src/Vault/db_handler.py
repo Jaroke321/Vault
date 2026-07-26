@@ -2,7 +2,7 @@ import sqlite3
 import datetime
 from pathlib import Path
 
-from .data_types import CATEGORIES
+from .data_types import CATEGORIES, FieldStatus
 
 
 class DBHandler:
@@ -43,104 +43,101 @@ class DBHandler:
                     conn.execute(meta_ddl)
             conn.commit()
 
-    def add_category(self, name: str) -> int:
-        name = name.lower()
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,))
-            conn.commit()
-            row = conn.execute("SELECT id FROM categories WHERE name = ?", (name,)).fetchone()
-            return row[0]
+    def get_categories(self) -> list:
+        """Return the fixed category names, sorted. Categories are code-defined
+        (CATEGORIES) — there is no runtime creation, unlike the old categories table."""
+        return sorted(CATEGORIES.keys())
 
     def add_field(self, name: str, category: str) -> bool:
+        """Register a new record under `category`. Categories are fixed — an unknown
+        category is rejected. Never reactivates a previously closed record: re-adding a
+        name mints a brand new row, so a sold-then-rebought instance (e.g. house ->
+        new house) never merges snapshot series with its predecessor. A duplicate
+        *active* name is rejected via the ux_fields_active_name unique index."""
         name = name.lower()
         category = category.lower()
-        category_id = self.add_category(category)
+        if category not in CATEGORIES:
+            return False
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            # Check if a deactivated field with this name exists — reactivate it
-            row = conn.execute(
-                "SELECT id, deactivated_at FROM fields WHERE name = ?", (name,)
-            ).fetchone()
-            if row is not None:
-                field_id, deactivated_at = row
-                if deactivated_at is not None:
-                    conn.execute(
-                        "UPDATE fields SET deactivated_at = NULL, category_id = ? WHERE id = ?",
-                        (category_id, field_id)
-                    )
-                    conn.commit()
-                    return True
-                else:
-                    return False  # Already active with this name
             try:
                 conn.execute(
-                    "INSERT INTO fields (name, category_id, created_at, deactivated_at) VALUES (?, ?, ?, NULL)",
-                    (name, category_id, datetime.datetime.now().isoformat())
+                    "INSERT INTO fields (name, category, created_at) VALUES (?, ?, ?)",
+                    (name, category, datetime.datetime.now().isoformat())
                 )
                 conn.commit()
                 return True
             except sqlite3.IntegrityError:
                 return False
 
-    def deactivate_field(self, name: str) -> bool:
+    def close_field(self, name: str, reason: str = FieldStatus.CLOSED.value) -> bool:
+        """Close (soft-delete) the active record named `name`, tagging it with a
+        lifecycle reason. History is preserved; the name frees up for reuse once
+        closed. Returns False for an invalid reason or no matching active record."""
+        if reason not in (status.value for status in FieldStatus):
+            return False
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             cursor = conn.execute(
-                "UPDATE fields SET deactivated_at = ? WHERE name = ? AND deactivated_at IS NULL",
-                (datetime.datetime.now().isoformat(), name.lower())
+                "UPDATE fields SET deactivated_at = ?, status = ? WHERE name = ? AND deactivated_at IS NULL",
+                (datetime.datetime.now().isoformat(), reason, name.lower())
             )
             conn.commit()
             return cursor.rowcount == 1
 
-    def set_category_unit(self, category: str, unit: str) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "UPDATE categories SET unit = ? WHERE name = ?",
-                (unit.strip(), category.lower())
-            )
-            conn.commit()
-            return cursor.rowcount == 1
-
-    def get_field_unit(self, field_name: str) -> str:
+    def get_field_category(self, name: str) -> str | None:
+        """Return the active record's category name, or None if no active record
+        matches."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                """SELECT c.unit FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE f.name = ? AND f.deactivated_at IS NULL""",
-                (field_name.lower(),)
+                "SELECT category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),)
             ).fetchone()
-        return row[0] if row else "$"
-
-    def get_active_fields(self) -> list:
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """SELECT f.name, c.name, c.unit
-                   FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE f.deactivated_at IS NULL
-                   ORDER BY c.name, f.name"""
-            ).fetchall()
-            return rows
-
-    def get_categories(self) -> list:
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT name FROM categories ORDER BY name"
-            ).fetchall()
-            return [c[0] for c in rows]
+        return row[0] if row is not None else None
 
     def get_fields_by_category(self, category_name: str) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
-                """SELECT f.name
-                   FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE c.name = ? AND f.deactivated_at IS NULL
-                   ORDER BY f.name""",
-                (category_name,)
+                "SELECT name FROM fields WHERE category = ? AND deactivated_at IS NULL ORDER BY name",
+                (category_name.lower(),)
             ).fetchall()
-            return [r[0] for r in rows]
+        return [r[0] for r in rows]
+
+    def _resolve_unit(self, conn, category_cls, field_id: int) -> str:
+        """Resolve a record's display unit: fixed for monetary categories, or read
+        from its meta table for priced categories (Investment) whose unit varies
+        per-record. Falls back to the class default if no meta row exists yet."""
+        if not category_cls.is_priced:
+            return category_cls.display_unit()
+        row = conn.execute(
+            f"SELECT * FROM {category_cls.meta_table} WHERE field_id = ?", (field_id,)
+        ).fetchone()
+        return category_cls.display_unit(row)
+
+    def get_field_unit(self, field_name: str) -> str:
+        """Return the active record's display unit, or "$" if no active record
+        matches."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (field_name.lower(),)
+            ).fetchone()
+            if row is None:
+                return "$"
+            field_id, category = row
+            return self._resolve_unit(conn, CATEGORIES[category], field_id)
+
+    def get_active_fields(self) -> list:
+        """Return (name, category, unit) for every active record, ordered by
+        category then name."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT id, name, category FROM fields WHERE deactivated_at IS NULL ORDER BY category, name"
+            ).fetchall()
+            return [
+                (name, category, self._resolve_unit(conn, CATEGORIES[category], field_id))
+                for field_id, name, category in rows
+            ]
 
     def record_value(self, field_name: str, month: str, value: float, recorded_at: str | None = None) -> bool:
         with sqlite3.connect(self.db_path) as conn:
