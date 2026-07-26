@@ -510,11 +510,13 @@ class DBHandler:
         results.sort(key=lambda r: (r[1], r[0]))
         return results
 
-    def get_backing_info(self, field_id: int) -> tuple[str, float] | None:
+    def get_backing_info(self, field_id: int) -> tuple[str, str, float, int] | None:
         """For a Debt record's field_id, resolve its backing link (if any) to the
-        backed record's name and latest recorded amount — used by `summary` to print
-        the display-only balance/value/equity trio. Returns None if unlinked, the
-        backing record is gone, or it has no recorded value yet."""
+        backed record's name, category, latest recorded amount, and its own field_id
+        (needed to resolve a live price if the backing record is itself priced, e.g.
+        Investment) — used by `summary` to print the display-only balance/value/
+        equity trio. Returns None if unlinked, the backing record is gone, or it has
+        no recorded value yet."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT backing_id FROM debt_meta WHERE field_id = ?", (field_id,)
@@ -540,7 +542,7 @@ class DBHandler:
             ).fetchone()
             if value_row is None:
                 return None
-            return name, float(value_row[0])
+            return name, category, float(value_row[0]), backing_id
 
     def get_investment_fields(self) -> list:
         """Return (field_id, name, symbol, override_price, cached_price, cached_at)
