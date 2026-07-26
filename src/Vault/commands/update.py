@@ -8,8 +8,7 @@ class UpdateCommand(BaseCommand):
 
     USAGE = """
   update                               Interactively stage values for all fields (default: current month)
-  update <field> <value> [-m YYYY-MM]  Stage a value for a single field
-  update <field> <value> <asset> [-m YYYY-MM]  Stage value + asset for a debt field
+  update <field> <value> [-m YYYY-MM]  Stage a value for a single field (value or quantity, per its category)
 """
 
     def entry_point(self, options: list):
@@ -30,8 +29,6 @@ class UpdateCommand(BaseCommand):
            self.usage()
         elif len(options) == 2:
            self.sub_single_update(options, target_month)
-        elif len(options) == 3:
-            self.sub_asset_value_update(options, target_month)
         else:
            self.usage()
 
@@ -69,40 +66,22 @@ class UpdateCommand(BaseCommand):
         field_name, raw = options[0], options[1]
         success = False
 
-        value = self._parse_float(raw)
+        amount = self._parse_float(raw)
         field_name_exists = self._is_a_field_name(field_name)
 
-        if field_name_exists and value:
+        if field_name_exists and amount:
             old = self.db.get_value(field_name, target_month)
-            if old is not None and old != value:
+            if old is not None and old != amount:
                 print(
                     f"[WARN] Overwriting value for {field_name} {target_month}: "
-                    f"{self.format_value(old)} → {self.format_value(value)}"
+                    f"{self.format_value(old)} → {self.format_value(amount)}"
                 )
 
-            self.commits.append([ field_name, target_month, value, "value" ])
+            self.commits.append([ field_name, target_month, amount ])
             success = True
 
         else:
             print("[ERROR] Either field name doesnt exist yet, or the value was invalid")
             success = False
-        
+
         return success
-
-    def sub_asset_value_update(self, options, target_month):
-        
-        if self.sub_single_update(options, target_month):
-
-            asset_value = self._parse_float(options[2])
-            if asset_value:
-                field_name = options[0]
-                old = self.db.get_asset_value(field_name, target_month)
-                if old is not None and old != asset_value:
-                    print(
-                        f"[WARN] Overwriting asset for {field_name} {target_month}: "
-                        f"{self.format_value(old)} → {self.format_value(asset_value)}"
-                    )
-                self.commits.append([ field_name, target_month, asset_value, "asset" ])
-            
-            else:
-                print("[ERROR] Invalid asset number.")
