@@ -318,46 +318,70 @@ class DBHandler:
             conn.commit()
             return cursor.rowcount == 1
 
+    def _union_months(self, conn, limit: int | None = None) -> list[str]:
+        """Distinct months across every category's snapshot table, ascending. With a
+        limit, returns only the most recent N months (still ascending)."""
+        parts = " UNION ALL ".join(f"SELECT month FROM {c.snapshot_table}" for c in CATEGORIES.values())
+        if limit is None:
+            rows = conn.execute(f"SELECT DISTINCT month FROM ({parts}) ORDER BY month").fetchall()
+            return [r[0] for r in rows]
+        rows = conn.execute(
+            f"SELECT DISTINCT month FROM ({parts}) ORDER BY month DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return sorted(r[0] for r in rows)
+
+    def _snapshot_rows(
+        self, conn, months: list[str] | None = None, field_names: list[str] | None = None
+    ):
+        """Yield (field_name, month, amount) across every category's snapshot table,
+        for active records only, optionally filtered to specific months and/or names."""
+        for category_cls in CATEGORIES.values():
+            clauses = ["f.deactivated_at IS NULL"]
+            params: list = []
+            if months is not None:
+                clauses.append(f"s.month IN ({','.join('?' * len(months))})")
+                params.extend(months)
+            if field_names is not None:
+                clauses.append(f"f.name IN ({','.join('?' * len(field_names))})")
+                params.extend(field_names)
+            rows = conn.execute(
+                f"""SELECT f.name, s.month, s.{category_cls.value_column}
+                    FROM {category_cls.snapshot_table} s
+                    JOIN fields f ON f.id = s.field_id
+                    WHERE {' AND '.join(clauses)}""",
+                params,
+            ).fetchall()
+            yield from rows
+
     def get_history(self, field_name: str = None, months: int = 6):
         if field_name is not None:
             with sqlite3.connect(self.db_path) as conn:
+                resolved = self._field_and_category(conn, field_name)
+                if resolved is None:
+                    return []
+                field_id, category_cls = resolved
                 rows = conn.execute(
-                    """SELECT s.month, s.value
-                       FROM snapshots s
-                       JOIN fields f ON f.id = s.field_id
-                       WHERE f.name = ?
-                       ORDER BY s.month DESC
-                       LIMIT ?""",
-                    (field_name.lower(), months)
+                    f"""SELECT month, {category_cls.value_column}
+                        FROM {category_cls.snapshot_table}
+                        WHERE field_id = ?
+                        ORDER BY month DESC
+                        LIMIT ?""",
+                    (field_id, months)
                 ).fetchall()
             rows.reverse()
             return rows
         else:
             with sqlite3.connect(self.db_path) as conn:
-                month_rows = conn.execute(
-                    "SELECT DISTINCT month FROM snapshots ORDER BY month DESC LIMIT ?",
-                    (months,)
-                ).fetchall()
-                month_list = sorted([r[0] for r in month_rows])
+                month_list = self._union_months(conn, limit=months)
 
                 if not month_list:
                     return ([], [], {})
 
                 active_fields = self.get_active_fields()
 
-                placeholders = ",".join("?" * len(month_list))
-                snapshot_rows = conn.execute(
-                    f"""SELECT f.name, s.month, s.value
-                        FROM snapshots s
-                        JOIN fields f ON f.id = s.field_id
-                        WHERE f.deactivated_at IS NULL
-                          AND s.month IN ({placeholders})""",
-                    month_list
-                ).fetchall()
-
-            data = {}
-            for field, month, value in snapshot_rows:
-                data.setdefault(field, {})[month] = value
+                data = {}
+                for name, month, amount in self._snapshot_rows(conn, months=month_list):
+                    data.setdefault(name, {})[month] = amount
 
             return (month_list, active_fields, data)
 
@@ -366,34 +390,21 @@ class DBHandler:
         month on record, not limited to a recent window. Same 3-tuple shape as
         get_history()'s all-fields form: (month_list, active_fields, data)."""
         with sqlite3.connect(self.db_path) as conn:
-            month_rows = conn.execute(
-                "SELECT DISTINCT month FROM snapshots ORDER BY month"
-            ).fetchall()
-            month_list = [r[0] for r in month_rows]
+            month_list = self._union_months(conn)
 
             if not month_list:
                 return ([], [], {})
 
             active_fields = self.get_active_fields()
 
-            placeholders = ",".join("?" * len(month_list))
-            snapshot_rows = conn.execute(
-                f"""SELECT f.name, s.month, s.value
-                    FROM snapshots s
-                    JOIN fields f ON f.id = s.field_id
-                    WHERE f.deactivated_at IS NULL
-                      AND s.month IN ({placeholders})""",
-                month_list
-            ).fetchall()
-
-        data = {}
-        for field, month, value in snapshot_rows:
-            data.setdefault(field, {})[month] = value
+            data = {}
+            for name, month, amount in self._snapshot_rows(conn, months=month_list):
+                data.setdefault(name, {})[month] = amount
 
         return (month_list, active_fields, data)
 
     def get_field_values(self, field_names: list[str]) -> dict[str, dict[str, float]]:
-        """Return {field_name: {month: value}} from snapshots for the given fields.
+        """Return {field_name: {month: value}} for the given *active* records.
 
         Names are matched case-insensitively and returned lower-cased. Empty input
         returns {} without querying.
@@ -402,19 +413,10 @@ class DBHandler:
             return {}
 
         lowered = [name.lower() for name in field_names]
-        placeholders = ",".join("?" * len(lowered))
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                f"""SELECT f.name, s.month, s.value
-                    FROM snapshots s
-                    JOIN fields f ON f.id = s.field_id
-                    WHERE f.name IN ({placeholders})""",
-                lowered,
-            ).fetchall()
-
-        data: dict[str, dict[str, float]] = {}
-        for field, month, value in rows:
-            data.setdefault(field, {})[month] = value
+            data: dict[str, dict[str, float]] = {}
+            for name, month, amount in self._snapshot_rows(conn, field_names=lowered):
+                data.setdefault(name, {})[month] = amount
         return data
 
     def get_values_for_month(self, month: str) -> dict[str, float]:
@@ -469,28 +471,62 @@ class DBHandler:
         return (float(row[0]), row[1]) if row is not None else None
 
     def get_latest_values(self) -> list:
+        """Return (name, category, unit, amount, field_id) for the most recent
+        snapshot of every active record, ordered by category then name. `amount` is
+        the record's raw stored value ('value' for monetary categories, 'quantity'
+        for Investment) — callers resolve USD equivalents per-category (e.g. via
+        CATEGORIES[category].usd_value()). Records with no recorded snapshot yet are
+        excluded, same as before."""
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """SELECT f.name, c.name, c.unit, s.value, das.asset_value, f.id
-                   FROM snapshots s
-                   JOIN fields f     ON f.id = s.field_id
-                   JOIN categories c ON c.id = f.category_id
-                   LEFT JOIN debt_asset_snapshots das
-                          ON das.field_id = s.field_id
-                         AND das.month = (
-                                 SELECT MAX(das2.month)
-                                 FROM debt_asset_snapshots das2
-                                 WHERE das2.field_id = s.field_id
-                             )
-                   WHERE f.deactivated_at IS NULL
-                     AND s.month = (
-                             SELECT MAX(s2.month)
-                             FROM snapshots s2
-                             WHERE s2.field_id = f.id
-                         )
-                   ORDER BY c.name, f.name"""
-            ).fetchall()
-            return rows
+            results = []
+            for category_cls in CATEGORIES.values():
+                table, column = category_cls.snapshot_table, category_cls.value_column
+                rows = conn.execute(
+                    f"""SELECT f.name, f.category, s.{column}, f.id
+                        FROM {table} s
+                        JOIN fields f ON f.id = s.field_id
+                        WHERE f.deactivated_at IS NULL
+                          AND s.month = (
+                                  SELECT MAX(s2.month) FROM {table} s2 WHERE s2.field_id = f.id
+                              )"""
+                ).fetchall()
+                for name, category, amount, field_id in rows:
+                    unit = self._resolve_unit(conn, category_cls, field_id)
+                    results.append((name, category, unit, amount, field_id))
+        results.sort(key=lambda r: (r[1], r[0]))
+        return results
+
+    def get_backing_info(self, field_id: int) -> tuple[str, float] | None:
+        """For a Debt record's field_id, resolve its backing link (if any) to the
+        backed record's name and latest recorded amount — used by `summary` to print
+        the display-only balance/value/equity trio. Returns None if unlinked, the
+        backing record is gone, or it has no recorded value yet."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT backing_id FROM debt_meta WHERE field_id = ?", (field_id,)
+            ).fetchone()
+            if row is None or row[0] is None:
+                return None
+            backing_id = row[0]
+
+            backing_row = conn.execute(
+                "SELECT name, category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (backing_id,)
+            ).fetchone()
+            if backing_row is None:
+                return None
+            name, category = backing_row
+            table, column = CATEGORIES[category].snapshot_table, CATEGORIES[category].value_column
+
+            value_row = conn.execute(
+                f"""SELECT {column} FROM {table}
+                    WHERE field_id = ?
+                      AND month = (SELECT MAX(month) FROM {table} WHERE field_id = ?)""",
+                (backing_id, backing_id)
+            ).fetchone()
+            if value_row is None:
+                return None
+            return name, float(value_row[0])
 
     def set_commodity(self, field_name: str, symbol: str) -> bool:
         with sqlite3.connect(self.db_path) as conn:
