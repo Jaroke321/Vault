@@ -34,7 +34,7 @@ class PriceFetcher:
         "CT":  "CT=F",   # Cotton futures
     }
 
-    # Category + display unit per symbol. Static reference data for `commodity
+    # Category + display unit per symbol. Static reference data for `investment
     # options`; groupings mirror the comment sections above — keep all three
     # collections in sync when adding a symbol. All prices are USD.
     SYMBOL_TO_CATEGORY = {

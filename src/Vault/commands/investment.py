@@ -1,19 +1,16 @@
-import datetime
 from .base import BaseCommand
 from ..price_fetcher import PriceFetcher
 
-class CommodityCommand(BaseCommand):
+class InvestmentCommand(BaseCommand):
 
-    call_str = "commodity" # Tells the prompt the string command in order to call this class
+    call_str = "investment" # Tells the prompt the string command in order to call this class
 
     USAGE = """
-  commodity tag <field> <commodity>     Tag a field as a commodity or stock/ETF (e.g. 'gold', 'XAU', or 'AAPL')
-  commodity untag <field>               Remove commodity tag from a field
-  commodity override <field> <price>    Lock a manual price per unit for this field
-  commodity override <field> clear      Remove price lock (use live/cached price)
-  commodity list                        Show all tagged fields with current prices and source
-  commodity options                     Show known commodity symbols, names, and units
-  commodity refresh                     Re-fetch live prices for all tagged fields
+  investment override <field> <price>   Lock a manual price per unit for this field
+  investment override <field> clear     Remove price lock (use live/cached price)
+  investment list                       Show all investment records with current prices and source
+  investment options                    Show known commodity symbols, names, and units
+  investment refresh                    Re-fetch live prices for all investment records
 """
 
     def entry_point(self, options: list):
@@ -30,69 +27,16 @@ class CommodityCommand(BaseCommand):
         if sub in self.sub_commands:
             self.sub_commands[sub](options[1:])
         else:
-            print(f"Unknown subcommand '{sub}'. Use: tag, untag, override, list, options, refresh")
+            print(f"Unknown subcommand '{sub}'. Use: override, list, options, refresh")
 
     ####################################
     # Sub-commands
     ####################################
-    def sub_tag(self, options: list):
-
-        # Error checking
-        if len(options) < 2:
-
-            # TODO:
-            # Need to think about how to apply a commodity to an entire category
-            # This will be useful for the user and can avoid the awkward command of
-            # commodity tag gold gold
-            # instead the user should be able to type in commodity tag metals
-            # and if metals is a category in storage
-            # We will attempt to commodify all of them
-
-            return
-
-        # Business logic
-        field_name = options[0]
-        symbol = PriceFetcher.resolve_symbol(options[1])
-
-        # Known commodity symbols (metals, etc.) tag instantly, same as always — the
-        # static list is still their typo safety net. Pass-through tickers (anything
-        # not in the static maps) have no such list, so validate them live instead.
-        live_price = None
-        if symbol not in PriceFetcher.SYMBOL_TO_TICKER and self.price_fetcher is not None:
-            live_price = self.price_fetcher.probe_symbol(symbol)
-            if live_price is None:
-                print(f"Could not resolve '{options[1]}' as a live ticker — check the symbol and your connection.")
-                return
-
-        success = self.db.set_commodity(field_name, symbol)
-        if success:
-            print(f"Field '{field_name}' tagged as {symbol}.")
-            self.logger.log(f"Commodity tag set: {field_name} -> {symbol}")
-            if live_price is not None:
-                now = datetime.datetime.now().isoformat()
-                self.db.set_commodity_cache(field_name, live_price, now)
-        else:
-            print(f"No active field named '{field_name}'.")
-
-    def sub_untag(self, options: list):
-
-        # Error checking
-        if len(options) < 1:
-            print("Usage: commodity untag <field>")
-            return
-
-        # Business logic
-        success = self.db.remove_commodity(options[0])
-        if success:
-            print(f"Commodity tag removed from '{options[0]}'.")
-        else:
-            print(f"No commodity tag found for '{options[0]}'.")
-
     def sub_override(self, options: list):
 
         # Error checking
         if len(options) < 2:
-            print("Usage: commodity override <field> <price> | commodity override <field> clear")
+            print("Usage: investment override <field> <price> | investment override <field> clear")
             return
 
         # Business logic
@@ -104,15 +48,15 @@ class CommodityCommand(BaseCommand):
             if price is None:
                 print(f"Invalid price '{raw}'. Must be a number or 'clear'.")
                 return
-        success = self.db.set_commodity_override(field_name, price)
+        success = self.db.set_override(field_name, price)
         if success:
             if price is None:
                 print(f"Override cleared for '{field_name}'. Using live/cached price.")
             else:
                 print(f"Override price set for '{field_name}': {self.format_value(price, '$')}/unit.")
-            self.logger.log(f"Commodity override set: {field_name} -> {price}")
+            self.logger.log(f"Investment override set: {field_name} -> {price}")
         else:
-            print(f"No commodity tag found for '{field_name}'. Use 'commodity tag' first.")
+            print(f"No investment record named '{field_name}'. Use 'field add investment' first.")
 
     def sub_options(self, options: list):
         """List all known commodity symbols, their name aliases, and unit, grouped by
@@ -132,15 +76,18 @@ class CommodityCommand(BaseCommand):
             names = ", ".join(aliases_by_symbol.get(symbol, []))
             unit = PriceFetcher.SYMBOL_TO_UNIT[symbol]
             print(f"    {symbol:<6}{names:<22}{unit}")
-        print("\n  Tag a field with a symbol or name, e.g. 'commodity tag <field> XAU' or 'commodity tag <field> gold'.")
-        print("  Any other input is treated as a pass-through stock/ETF ticker, validated live at tag time.\n")
+        print(
+            "\n  Tag a record with a symbol or name at add time, e.g. "
+            "'field add investment <name> XAU' or 'field add investment <name> gold'."
+        )
+        print("  Any other input is treated as a pass-through stock/ETF ticker, validated live at add time.\n")
 
     def sub_list(self, options: list):
 
         # Business logic
         status_rows = self._fetch_status()
         if not status_rows:
-            print("No commodity-tagged fields. Use 'commodity tag <field> <symbol>' to add one.")
+            print("No investment records. Use 'field add investment <name> <symbol>' to add one.")
             return
 
         print(f"\n  {'Field':<20}  {'Symbol':<6}  {'Price':>12}  {'Source':<12}  {'Cached At'}")
@@ -152,11 +99,11 @@ class CommodityCommand(BaseCommand):
         print()
 
     def _fetch_status(self) -> list[tuple]:
-        """Return display info for each tagged field: (field_name, symbol, price, source, cached_at).
+        """Return display info for each investment record: (field_name, symbol, price, source, cached_at).
 
         Defers to price_fetcher.get_fetch_status() when a fetcher is present (it also
         knows about freshly-fetched live prices). Otherwise falls back to override/cached
-        prices read straight from the DB, so 'commodity list' still works without a
+        prices read straight from the DB, so 'investment list' still works without a
         fetcher (e.g. --test mode). source is one of: 'override', 'cached', 'unavailable'
         (plus 'live' when a fetcher supplied it).
         """
@@ -164,7 +111,7 @@ class CommodityCommand(BaseCommand):
             return self.price_fetcher.get_fetch_status()
 
         result = []
-        for field_id, field_name, symbol, override_price, cached_price, cached_at in self.db.get_commodity_fields():
+        for field_id, field_name, symbol, override_price, cached_price, cached_at in self.db.get_investment_fields():
             if override_price is not None:
                 result.append((field_name, symbol, override_price, "override", cached_at))
             elif cached_price is not None:
@@ -181,10 +128,10 @@ class CommodityCommand(BaseCommand):
             return
 
         # Business logic
-        print("Refreshing commodity prices...")
+        print("Refreshing investment prices...")
         fetched = self.price_fetcher.fetch_all()
         if fetched:
             for sym, price in sorted(fetched.items()):
                 print(f"  {sym}: {self.format_value(price, '$')}")
         else:
-            print("  No prices fetched (no tagged fields or fetch failed).")
+            print("  No prices fetched (no investment records or fetch failed).")
