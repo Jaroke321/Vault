@@ -74,4 +74,5 @@ class PricedCategory(Category):
     rather than a raw dollar figure. Base for Investment."""
 
     value_column = "quantity"
+    unit_default = "unit"  # fallback only; concrete unit is per-record (see display_unit)
     is_priced = True
