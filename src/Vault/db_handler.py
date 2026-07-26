@@ -268,52 +268,38 @@ class DBHandler:
             conn.commit()
             return True
 
-    def record_value(self, field_name: str, month: str, value: float, recorded_at: str | None = None) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
-                return False
-            field_id = row[0]
-            if recorded_at is None:
-                recorded_at = datetime.datetime.now().isoformat()
-            conn.execute(
-                """INSERT INTO snapshots (field_id, month, value, recorded_at)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT(field_id, month)
-                   DO UPDATE SET value = excluded.value,
-                                 recorded_at = excluded.recorded_at""",
-                (field_id, month, value, recorded_at)
-            )
-            conn.commit()
-            return True
+    def _field_and_category(self, conn, field_name: str) -> tuple[int, type] | None:
+        """Resolve an active record's (field_id, category class), or None if no
+        active record matches. Shared by every category-routed snapshot method."""
+        row = conn.execute(
+            "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+            (field_name.lower(),)
+        ).fetchone()
+        if row is None:
+            return None
+        field_id, category = row
+        return field_id, CATEGORIES[category]
 
-    def record_asset_value(self, field_name: str, month: str, asset_value: float, recorded_at: str | None = None) -> bool:
+    def record_value(self, field_name: str, month: str, amount: float, recorded_at: str | None = None) -> bool:
+        """Stage a snapshot for an active record, routed to its category's snapshot
+        table and value column ('value' for monetary categories, 'quantity' for
+        Investment). Upserts on (field_id, month)."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                """SELECT f.id FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE f.name = ?
-                     AND f.deactivated_at IS NULL
-                     AND c.name = 'debt'""",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
+            resolved = self._field_and_category(conn, field_name)
+            if resolved is None:
                 return False
-            field_id = row[0]
+            field_id, category_cls = resolved
             if recorded_at is None:
                 recorded_at = datetime.datetime.now().isoformat()
+            table, column = category_cls.snapshot_table, category_cls.value_column
             conn.execute(
-                """INSERT INTO debt_asset_snapshots (field_id, month, asset_value, recorded_at)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT(field_id, month)
-                   DO UPDATE SET asset_value = excluded.asset_value,
-                                 recorded_at = excluded.recorded_at""",
-                (field_id, month, asset_value, recorded_at)
+                f"""INSERT INTO {table} (field_id, month, {column}, recorded_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(field_id, month)
+                    DO UPDATE SET {column} = excluded.{column},
+                                  recorded_at = excluded.recorded_at""",
+                (field_id, month, amount, recorded_at)
             )
             conn.commit()
             return True
@@ -321,36 +307,12 @@ class DBHandler:
     def delete_value(self, field_name: str, month: str) -> bool:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
+            resolved = self._field_and_category(conn, field_name)
+            if resolved is None:
                 return False
-            field_id = row[0]
+            field_id, category_cls = resolved
             cursor = conn.execute(
-                "DELETE FROM snapshots WHERE field_id = ? AND month = ?",
-                (field_id, month)
-            )
-            conn.commit()
-            return cursor.rowcount == 1
-
-    def delete_asset_value(self, field_name: str, month: str) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                """SELECT f.id FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE f.name = ?
-                     AND f.deactivated_at IS NULL
-                     AND c.name = 'debt'""",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
-                return False
-            field_id = row[0]
-            cursor = conn.execute(
-                "DELETE FROM debt_asset_snapshots WHERE field_id = ? AND month = ?",
+                f"DELETE FROM {category_cls.snapshot_table} WHERE field_id = ? AND month = ?",
                 (field_id, month)
             )
             conn.commit()
@@ -456,76 +418,53 @@ class DBHandler:
         return data
 
     def get_values_for_month(self, month: str) -> dict[str, float]:
-        """Return {field_name: value} for active fields at the given month.
+        """Return {field_name: amount} for active records at the given month, unioned
+        across every category's snapshot table.
 
         Returns {} when the month has no rows — callers distinguish missing data
         from zero by key absence, not by a sentinel value.
         """
+        results: dict[str, float] = {}
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """SELECT f.name, s.value
-                   FROM snapshots s
-                   JOIN fields f ON f.id = s.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND s.month = ?""",
-                (month,),
-            ).fetchall()
-
-        return {field: value for field, value in rows}
+            for category_cls in CATEGORIES.values():
+                rows = conn.execute(
+                    f"""SELECT f.name, s.{category_cls.value_column}
+                        FROM {category_cls.snapshot_table} s
+                        JOIN fields f ON f.id = s.field_id
+                        WHERE f.deactivated_at IS NULL
+                          AND s.month = ?""",
+                    (month,),
+                ).fetchall()
+                for name, amount in rows:
+                    results[name] = amount
+        return results
 
     def get_value(self, field_name: str, month: str) -> float | None:
-        """Return the snapshot value for one active field+month, or None if absent."""
+        """Return the snapshot amount for one active record+month, or None if absent."""
         with sqlite3.connect(self.db_path) as conn:
+            resolved = self._field_and_category(conn, field_name)
+            if resolved is None:
+                return None
+            field_id, category_cls = resolved
             row = conn.execute(
-                """SELECT s.value
-                   FROM snapshots s
-                   JOIN fields f ON f.id = s.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND f.name = ?
-                     AND s.month = ?""",
-                (field_name.lower(), month),
-            ).fetchone()
-        return float(row[0]) if row is not None else None
-
-    def get_asset_value(self, field_name: str, month: str) -> float | None:
-        """Return the debt asset snapshot for one active field+month, or None if absent."""
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """SELECT das.asset_value
-                   FROM debt_asset_snapshots das
-                   JOIN fields f ON f.id = das.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND f.name = ?
-                     AND das.month = ?""",
-                (field_name.lower(), month),
+                f"""SELECT {category_cls.value_column} FROM {category_cls.snapshot_table}
+                    WHERE field_id = ? AND month = ?""",
+                (field_id, month),
             ).fetchone()
         return float(row[0]) if row is not None else None
 
     def get_value_row(self, field_name: str, month: str) -> tuple[float, str] | None:
-        """Return (value, recorded_at) for one active field+month, or None if absent."""
+        """Return (amount, recorded_at) for one active record+month, or None if absent."""
         with sqlite3.connect(self.db_path) as conn:
+            resolved = self._field_and_category(conn, field_name)
+            if resolved is None:
+                return None
+            field_id, category_cls = resolved
             row = conn.execute(
-                """SELECT s.value, s.recorded_at
-                   FROM snapshots s
-                   JOIN fields f ON f.id = s.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND f.name = ?
-                     AND s.month = ?""",
-                (field_name.lower(), month),
-            ).fetchone()
-        return (float(row[0]), row[1]) if row is not None else None
-
-    def get_asset_value_row(self, field_name: str, month: str) -> tuple[float, str] | None:
-        """Return (asset_value, recorded_at) for one active field+month, or None if absent."""
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """SELECT das.asset_value, das.recorded_at
-                   FROM debt_asset_snapshots das
-                   JOIN fields f ON f.id = das.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND f.name = ?
-                     AND das.month = ?""",
-                (field_name.lower(), month),
+                f"""SELECT {category_cls.value_column}, recorded_at
+                    FROM {category_cls.snapshot_table}
+                    WHERE field_id = ? AND month = ?""",
+                (field_id, month),
             ).fetchone()
         return (float(row[0]), row[1]) if row is not None else None
 
