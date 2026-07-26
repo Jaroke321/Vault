@@ -1,5 +1,5 @@
 from .base import BaseCommand
-from ..data_types import FieldStatus
+from ..data_types import CATEGORIES, FieldStatus
 
 class FieldCommand(BaseCommand):
 
@@ -53,9 +53,10 @@ class FieldCommand(BaseCommand):
             print(f"Unknown category '{category}'. Supported: {', '.join(self.db.get_categories())}.")
             return
 
-        if category == "investment":
+        is_priced = CATEGORIES[category].is_priced
+        if is_priced:
             if len(options) != 3:
-                print("Usage: field add investment <name> <symbol>")
+                print(f"Usage: field add {category} <name> <symbol>")
                 return
             symbol = options[2]
         elif len(options) != 2:
@@ -67,7 +68,7 @@ class FieldCommand(BaseCommand):
             print(f"Field '{name}' already exists.")
             return
 
-        if category == "investment":
+        if is_priced:
             self.db.set_investment_symbol(name, symbol)
 
         print(f"Field '{name}' added under category '{category}'.")
@@ -89,7 +90,7 @@ class FieldCommand(BaseCommand):
             print(f"Field '{name}' closed ({reason}). History is preserved.")
             self.logger.log(f"Field closed: {name} ({reason})")
         else:
-            valid_reasons = ", ".join(status.value for status in FieldStatus)
+            valid_reasons = ", ".join(FieldStatus.values())
             print(f"No active field named '{name}' found, or invalid reason '{reason}' (valid: {valid_reasons}).")
 
     def sub_list(self, options: list):

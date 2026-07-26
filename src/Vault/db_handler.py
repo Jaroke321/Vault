@@ -75,7 +75,7 @@ class DBHandler:
         """Close (soft-delete) the active record named `name`, tagging it with a
         lifecycle reason. History is preserved; the name frees up for reuse once
         closed. Returns False for an invalid reason or no matching active record."""
-        if reason not in (status.value for status in FieldStatus):
+        if reason not in FieldStatus.values():
             return False
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
@@ -154,7 +154,7 @@ class DBHandler:
         """Relabel an active record's lifecycle status directly, independent of
         closing it (e.g. correcting a status set via `field remove`). Rejects
         anything outside FieldStatus."""
-        if status not in (s.value for s in FieldStatus):
+        if status not in FieldStatus.values():
             return False
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
@@ -168,13 +168,10 @@ class DBHandler:
         """Set a Debt record's interest rate. Only valid for an active Debt record."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (name.lower(),)
-            ).fetchone()
-            if row is None or row[1] != Debt.name:
+            resolved = self._field_and_category(conn, name)
+            if resolved is None or resolved[1] is not Debt:
                 return False
-            field_id = row[0]
+            field_id, _ = resolved
             conn.execute(
                 """INSERT INTO debt_meta (field_id, apr) VALUES (?, ?)
                    ON CONFLICT(field_id) DO UPDATE SET apr = excluded.apr""",
@@ -191,21 +188,15 @@ class DBHandler:
         side of the ledger."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            debt_row = conn.execute(
-                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (name.lower(),)
-            ).fetchone()
-            if debt_row is None or debt_row[1] != Debt.name:
+            debt = self._field_and_category(conn, name)
+            if debt is None or debt[1] is not Debt:
                 return False
 
-            backing_row = conn.execute(
-                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (backing_name.lower(),)
-            ).fetchone()
-            if backing_row is None or CATEGORIES[backing_row[1]].role() != "asset":
+            backing = self._field_and_category(conn, backing_name)
+            if backing is None or backing[1].is_liability:
                 return False
 
-            field_id, backing_id = debt_row[0], backing_row[0]
+            field_id, backing_id = debt[0], backing[0]
             conn.execute(
                 """INSERT INTO debt_meta (field_id, backing_id) VALUES (?, ?)
                    ON CONFLICT(field_id) DO UPDATE SET backing_id = excluded.backing_id""",
@@ -217,14 +208,12 @@ class DBHandler:
     def clear_backing(self, name: str) -> bool:
         """Remove a Debt record's backing link, if any."""
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (name.lower(),)
-            ).fetchone()
-            if row is None or row[1] != Debt.name:
+            resolved = self._field_and_category(conn, name)
+            if resolved is None or resolved[1] is not Debt:
                 return False
+            field_id, _ = resolved
             cursor = conn.execute(
-                "UPDATE debt_meta SET backing_id = NULL WHERE field_id = ?", (row[0],)
+                "UPDATE debt_meta SET backing_id = NULL WHERE field_id = ?", (field_id,)
             )
             conn.commit()
             return cursor.rowcount == 1
@@ -235,13 +224,10 @@ class DBHandler:
         Purely informational for future reporting — no snapshot data is merged."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (name.lower(),)
-            ).fetchone()
-            if row is None:
+            resolved = self._field_and_category(conn, name)
+            if resolved is None:
                 return False
-            field_id = row[0]
+            field_id, _ = resolved
 
             old_row = conn.execute(
                 """SELECT id FROM fields WHERE name = ? AND id != ?
@@ -264,20 +250,17 @@ class DBHandler:
         record."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (name.lower(),)
-            ).fetchone()
-            if row is None or row[1] != Investment.name:
+            resolved = self._field_and_category(conn, name)
+            if resolved is None or resolved[1] is not Investment:
                 return False
-            field_id = row[0]
-            resolved = PriceFetcher.resolve_symbol(symbol)
-            unit = PriceFetcher.SYMBOL_TO_UNIT.get(resolved, "shares")
+            field_id, _ = resolved
+            resolved_symbol = PriceFetcher.resolve_symbol(symbol)
+            unit = PriceFetcher.SYMBOL_TO_UNIT.get(resolved_symbol, "shares")
             conn.execute(
                 """INSERT INTO investment_meta (field_id, unit, symbol) VALUES (?, ?, ?)
                    ON CONFLICT(field_id) DO UPDATE SET unit = excluded.unit,
                                                         symbol = excluded.symbol""",
-                (field_id, unit, resolved)
+                (field_id, unit, resolved_symbol)
             )
             conn.commit()
             return True

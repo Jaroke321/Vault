@@ -1,4 +1,3 @@
-from abc import ABC
 from enum import Enum
 
 
@@ -11,12 +10,17 @@ class FieldStatus(str, Enum):
     PAID_OFF = "paid_off"
     CLOSED = "closed"
 
+    @classmethod
+    def values(cls) -> set[str]:
+        return {status.value for status in cls}
 
-class Category(ABC):
-    """Declares one category's schema and net-worth behavior. Never instantiated —
-    DBHandler and commands read these as class-level declarations via the CATEGORIES
-    registry in data_types/__init__.py, so adding a category means adding a class here,
-    not touching SQL scattered across the codebase."""
+
+class Category:
+    """Declares one category's schema and net-worth behavior. Used only as a class
+    (never instantiated) — DBHandler and commands read these as class-level
+    declarations via the CATEGORIES registry in data_types/__init__.py, so adding a
+    category means adding a class here, not touching SQL scattered across the
+    codebase."""
 
     name: str
     snapshot_table: str
@@ -44,11 +48,6 @@ class Category(ABC):
         """Per-record metadata table DDL, or None if this category has no metadata
         beyond the shared registry. Overridden by categories like Debt and Investment."""
         return None
-
-    @classmethod
-    def role(cls) -> str:
-        """Net-worth contribution: 'asset' or 'liability'."""
-        return "liability" if cls.is_liability else "asset"
 
     @classmethod
     def usd_value(cls, amount: float, price: float | None = None) -> float:

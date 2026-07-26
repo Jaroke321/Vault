@@ -2,6 +2,7 @@ import csv
 from pathlib import Path
 
 from .base import BaseCommand
+from ..data_types import CATEGORIES
 
 
 class ImportCommand(BaseCommand):
@@ -169,14 +170,14 @@ class ImportCommand(BaseCommand):
             cats = list(categories) + [None] * max(0, len(field_names) - len(categories))
             for i, name in enumerate(field_names):
                 category = cats[i]
-                if category == "investment":
-                    header_notes.append(
-                        f"[WARN] Skipped column '{name}': investment records need a symbol "
-                        "(set via 'field add investment'), which a CSV can't carry."
-                    )
-                elif category is not None and not self._is_a_category_name(category):
+                if category is not None and not self._is_a_category_name(category):
                     header_notes.append(
                         f"[ERROR] Unknown category '{category}' for column '{name}'; column skipped."
+                    )
+                elif category is not None and CATEGORIES[category].is_priced:
+                    header_notes.append(
+                        f"[WARN] Skipped column '{name}': priced records (e.g. investment) need a "
+                        "symbol (set via 'field add'), which a CSV can't carry."
                     )
                 else:
                     columns.append((name, category, i))
@@ -187,10 +188,10 @@ class ImportCommand(BaseCommand):
                         f"[ERROR] Unknown field '{name}' in legacy CSV "
                         f"(no category row to auto-create); column skipped."
                     )
-                elif self.db.get_field_category(name) == "investment":
+                elif CATEGORIES[self.db.get_field_category(name)].is_priced:
                     header_notes.append(
-                        f"[WARN] Skipped column '{name}': investment records need a symbol, "
-                        "which a CSV can't carry."
+                        f"[WARN] Skipped column '{name}': priced records (e.g. investment) need a "
+                        "symbol, which a CSV can't carry."
                     )
                 else:
                     columns.append((name, None, i))
