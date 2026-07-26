@@ -2,6 +2,8 @@ import sqlite3
 import datetime
 from pathlib import Path
 
+from .data_types import CATEGORIES
+
 
 class DBHandler:
 
@@ -13,75 +15,32 @@ class DBHandler:
         self.init_db()
 
     def init_db(self):
+        """Wipe-and-recreate schema — no migration. The fixed CATEGORIES registry
+        (data_types/__init__.py) drives table creation: one snapshot table and, where
+        declared, one meta table per category, alongside the shared fields registry."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS categories (
-                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    unit TEXT NOT NULL DEFAULT '$'
-                )
-            """)
-            conn.execute("""
                 CREATE TABLE IF NOT EXISTS fields (
                     id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name           TEXT NOT NULL UNIQUE,
-                    category_id    INTEGER NOT NULL REFERENCES categories(id),
-                    created_at     TEXT NOT NULL,
+                    name           TEXT    NOT NULL,
+                    category       TEXT    NOT NULL,
+                    note           TEXT,
+                    status         TEXT    NOT NULL DEFAULT 'active',
+                    replaces_id    INTEGER REFERENCES fields(id),
+                    created_at     TEXT    NOT NULL,
                     deactivated_at TEXT
                 )
             """)
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS snapshots (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    field_id    INTEGER NOT NULL REFERENCES fields(id),
-                    month       TEXT NOT NULL,
-                    value       REAL NOT NULL,
-                    recorded_at TEXT NOT NULL,
-                    UNIQUE(field_id, month)
-                )
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_fields_active_name
+                ON fields(name) WHERE deactivated_at IS NULL
             """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS debt_asset_snapshots (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    field_id    INTEGER NOT NULL REFERENCES fields(id),
-                    month       TEXT NOT NULL,
-                    asset_value REAL NOT NULL,
-                    recorded_at TEXT NOT NULL,
-                    UNIQUE(field_id, month)
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS commodity_prices (
-                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    field_id       INTEGER NOT NULL UNIQUE REFERENCES fields(id),
-                    symbol         TEXT NOT NULL,
-                    override_price REAL,
-                    cached_price   REAL,
-                    cached_at      TEXT
-                )
-            """)
-            self._migrate(conn)
-            conn.commit()
-
-    def _migrate(self, conn):
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(categories)").fetchall()]
-        if "unit" not in cols:
-            conn.execute("ALTER TABLE categories ADD COLUMN unit TEXT NOT NULL DEFAULT '$'")
-            conn.commit()
-
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "commodity_prices" not in tables:
-            conn.execute("""
-                CREATE TABLE commodity_prices (
-                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    field_id       INTEGER NOT NULL UNIQUE REFERENCES fields(id),
-                    symbol         TEXT NOT NULL,
-                    override_price REAL,
-                    cached_price   REAL,
-                    cached_at      TEXT
-                )
-            """)
+            for category in CATEGORIES.values():
+                conn.execute(category.snapshot_ddl())
+                meta_ddl = category.meta_ddl()
+                if meta_ddl is not None:
+                    conn.execute(meta_ddl)
             conn.commit()
 
     def add_category(self, name: str) -> int:
