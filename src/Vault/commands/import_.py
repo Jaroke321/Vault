@@ -59,9 +59,11 @@ class ImportCommand(BaseCommand):
         parsed = self._parse_header(rows)
         if parsed is None:
             return
-        columns, data_rows, legacy_errors = parsed
+        columns, data_rows, header_notes = parsed
 
-        # Auto-create fields/categories from the header (modern CSV only).
+        # Auto-create fields from the header (modern CSV only). Investment columns
+        # never reach here — _parse_header already filters them out, since a CSV has
+        # no way to carry the symbol a fresh investment record needs.
         for field_name, category, _ in columns:
             if category is not None:
                 self.db.add_field(field_name, category)
@@ -100,7 +102,7 @@ class ImportCommand(BaseCommand):
                     self.db.record_value(field_name, month, value)
                     committed += 1
                 else:
-                    self.commits.append([field_name, month, value, "value"])
+                    self.commits.append([field_name, month, value])
                     staged += 1
 
         skipped = skipped_empty + skipped_invalid
@@ -108,8 +110,8 @@ class ImportCommand(BaseCommand):
             f"Imported '{filename}': {committed} new values committed, "
             f"{staged} staged for review, {skipped} skipped."
         )
-        for err in legacy_errors:
-            print(err)
+        for note in header_notes:
+            print(note)
         for warn in warnings:
             print(warn)
 
@@ -124,9 +126,16 @@ class ImportCommand(BaseCommand):
     def _parse_header(self, rows: list):
         """Parse category/field header rows.
 
-        Returns (columns, data_rows, legacy_errors) or None on a hard error.
+        Returns (columns, data_rows, header_notes) or None on a hard error.
         columns is [(field_name, category_or_None, col_index), ...] where col_index
-        is the 0-based position in the value portion of each data row.
+        is the 0-based position in the value portion of each data row. category is
+        only set for modern (has-category-row) CSVs; legacy columns match an
+        already-active field and carry None.
+
+        Investment columns are always skipped, in both CSV forms: a CSV has no way
+        to carry the symbol a fresh investment record needs, and value-only export
+        never distinguished a quantity from a plain value in the first place — so
+        there's no reliable way back in for that category (value-only round-trip).
         """
 
         row0 = rows[0]
@@ -153,21 +162,37 @@ class ImportCommand(BaseCommand):
             return None
 
         field_names = [name.lower() for name in header[1:]]
-        legacy_errors = []
+        header_notes = []
         columns = []
 
         if has_category_row:
             cats = list(categories) + [None] * max(0, len(field_names) - len(categories))
             for i, name in enumerate(field_names):
-                columns.append((name, cats[i], i))
+                category = cats[i]
+                if category == "investment":
+                    header_notes.append(
+                        f"[WARN] Skipped column '{name}': investment records need a symbol "
+                        "(set via 'field add investment'), which a CSV can't carry."
+                    )
+                elif category is not None and not self._is_a_category_name(category):
+                    header_notes.append(
+                        f"[ERROR] Unknown category '{category}' for column '{name}'; column skipped."
+                    )
+                else:
+                    columns.append((name, category, i))
         else:
             for i, name in enumerate(field_names):
-                if self._is_a_field_name(name):
-                    columns.append((name, None, i))
-                else:
-                    legacy_errors.append(
+                if not self._is_a_field_name(name):
+                    header_notes.append(
                         f"[ERROR] Unknown field '{name}' in legacy CSV "
                         f"(no category row to auto-create); column skipped."
                     )
+                elif self.db.get_field_category(name) == "investment":
+                    header_notes.append(
+                        f"[WARN] Skipped column '{name}': investment records need a symbol, "
+                        "which a CSV can't carry."
+                    )
+                else:
+                    columns.append((name, None, i))
 
-        return columns, data_rows, legacy_errors
+        return columns, data_rows, header_notes
