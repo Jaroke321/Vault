@@ -150,6 +150,20 @@ class DBHandler:
             conn.commit()
             return cursor.rowcount == 1
 
+    def set_status(self, name: str, status: str) -> bool:
+        """Relabel an active record's lifecycle status directly, independent of
+        closing it (e.g. correcting a status set via `field remove`). Rejects
+        anything outside FieldStatus."""
+        if status not in (s.value for s in FieldStatus):
+            return False
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "UPDATE fields SET status = ? WHERE name = ? AND deactivated_at IS NULL",
+                (status, name.lower())
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
     def set_apr(self, name: str, apr: float) -> bool:
         """Set a Debt record's interest rate. Only valid for an active Debt record."""
         with sqlite3.connect(self.db_path) as conn:
