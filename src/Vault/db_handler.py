@@ -2,7 +2,8 @@ import sqlite3
 import datetime
 from pathlib import Path
 
-from .data_types import CATEGORIES, FieldStatus
+from .data_types import CATEGORIES, FieldStatus, Debt, Investment
+from .price_fetcher import PriceFetcher
 
 
 class DBHandler:
@@ -138,6 +139,134 @@ class DBHandler:
                 (name, category, self._resolve_unit(conn, CATEGORIES[category], field_id))
                 for field_id, name, category in rows
             ]
+
+    def set_note(self, name: str, note: str) -> bool:
+        """Attach a free-text note to any active record."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "UPDATE fields SET note = ? WHERE name = ? AND deactivated_at IS NULL",
+                (note, name.lower())
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def set_apr(self, name: str, apr: float) -> bool:
+        """Set a Debt record's interest rate. Only valid for an active Debt record."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            row = conn.execute(
+                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),)
+            ).fetchone()
+            if row is None or row[1] != Debt.name:
+                return False
+            field_id = row[0]
+            conn.execute(
+                """INSERT INTO debt_meta (field_id, apr) VALUES (?, ?)
+                   ON CONFLICT(field_id) DO UPDATE SET apr = excluded.apr""",
+                (field_id, apr)
+            )
+            conn.commit()
+            return True
+
+    def set_backing(self, name: str, backing_name: str) -> bool:
+        """Link a Debt record to an active asset-side record (Asset, Cash, Retirement,
+        or Investment — anything that isn't itself a liability), purely for the
+        display-only balance/value/equity trio in `summary`; net worth is unaffected
+        either way, since the backing record's value is already counted on its own
+        side of the ledger."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            debt_row = conn.execute(
+                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),)
+            ).fetchone()
+            if debt_row is None or debt_row[1] != Debt.name:
+                return False
+
+            backing_row = conn.execute(
+                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (backing_name.lower(),)
+            ).fetchone()
+            if backing_row is None or CATEGORIES[backing_row[1]].role() != "asset":
+                return False
+
+            field_id, backing_id = debt_row[0], backing_row[0]
+            conn.execute(
+                """INSERT INTO debt_meta (field_id, backing_id) VALUES (?, ?)
+                   ON CONFLICT(field_id) DO UPDATE SET backing_id = excluded.backing_id""",
+                (field_id, backing_id)
+            )
+            conn.commit()
+            return True
+
+    def clear_backing(self, name: str) -> bool:
+        """Remove a Debt record's backing link, if any."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),)
+            ).fetchone()
+            if row is None or row[1] != Debt.name:
+                return False
+            cursor = conn.execute(
+                "UPDATE debt_meta SET backing_id = NULL WHERE field_id = ?", (row[0],)
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def set_replaces(self, name: str, old_name: str) -> bool:
+        """Mark the active record `name` as the successor of the most recent record
+        previously named `old_name` (its own predecessor, e.g. after a sell/rebuy).
+        Purely informational for future reporting — no snapshot data is merged."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            row = conn.execute(
+                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),)
+            ).fetchone()
+            if row is None:
+                return False
+            field_id = row[0]
+
+            old_row = conn.execute(
+                """SELECT id FROM fields WHERE name = ? AND id != ?
+                   ORDER BY created_at DESC LIMIT 1""",
+                (old_name.lower(), field_id)
+            ).fetchone()
+            if old_row is None:
+                return False
+
+            conn.execute(
+                "UPDATE fields SET replaces_id = ? WHERE id = ?", (old_row[0], field_id)
+            )
+            conn.commit()
+            return True
+
+    def set_investment_symbol(self, name: str, symbol: str) -> bool:
+        """Set (or change) an Investment record's price-tracking symbol, recomputing
+        its display unit alongside it (troy oz/etc. for known commodities, 'shares'
+        for pass-through stock/ETF tickers). Only valid for an active Investment
+        record."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            row = conn.execute(
+                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),)
+            ).fetchone()
+            if row is None or row[1] != Investment.name:
+                return False
+            field_id = row[0]
+            resolved = PriceFetcher.resolve_symbol(symbol)
+            unit = PriceFetcher.SYMBOL_TO_UNIT.get(resolved, "shares")
+            conn.execute(
+                """INSERT INTO investment_meta (field_id, unit, symbol) VALUES (?, ?, ?)
+                   ON CONFLICT(field_id) DO UPDATE SET unit = excluded.unit,
+                                                        symbol = excluded.symbol""",
+                (field_id, unit, resolved)
+            )
+            conn.commit()
+            return True
 
     def record_value(self, field_name: str, month: str, value: float, recorded_at: str | None = None) -> bool:
         with sqlite3.connect(self.db_path) as conn:
