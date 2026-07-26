@@ -528,87 +528,63 @@ class DBHandler:
                 return None
             return name, float(value_row[0])
 
-    def set_commodity(self, field_name: str, symbol: str) -> bool:
+    def get_investment_fields(self) -> list:
+        """Return (field_id, name, symbol, override_price, cached_price, cached_at)
+        for every active Investment record — the price-fetching surface for
+        PriceFetcher and `investment list`/`investment refresh`. Tagging itself
+        happens at `field add investment <name> <symbol>` time via
+        set_investment_symbol; there is no separate tag/untag step."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
-                return False
-            field_id = row[0]
-            conn.execute(
-                """INSERT INTO commodity_prices (field_id, symbol)
-                   VALUES (?, ?)
-                   ON CONFLICT(field_id) DO UPDATE SET symbol = excluded.symbol""",
-                (field_id, symbol.upper())
-            )
-            conn.commit()
-            return True
+            rows = conn.execute(
+                """SELECT f.id, f.name, im.symbol, im.override_price, im.cached_price, im.cached_at
+                   FROM investment_meta im
+                   JOIN fields f ON f.id = im.field_id
+                   WHERE f.deactivated_at IS NULL"""
+            ).fetchall()
+        return rows
 
-    def remove_commodity(self, field_name: str) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id FROM fields WHERE name = ?", (field_name.lower(),)
-            ).fetchone()
-            if row is None:
-                return False
-            cursor = conn.execute(
-                "DELETE FROM commodity_prices WHERE field_id = ?", (row[0],)
-            )
-            conn.commit()
-            return cursor.rowcount == 1
-
-    def set_commodity_override(self, field_name: str, price) -> bool:
+    def set_override(self, field_name: str, price) -> bool:
+        """Set (or clear, with price=None) an active Investment record's manual
+        price override."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                """SELECT cp.id FROM commodity_prices cp
-                   JOIN fields f ON f.id = cp.field_id
-                   WHERE f.name = ?""",
+                """SELECT im.field_id FROM investment_meta im
+                   JOIN fields f ON f.id = im.field_id
+                   WHERE f.name = ? AND f.deactivated_at IS NULL""",
                 (field_name.lower(),)
             ).fetchone()
             if row is None:
                 return False
             conn.execute(
-                "UPDATE commodity_prices SET override_price = ? WHERE id = ?",
+                "UPDATE investment_meta SET override_price = ? WHERE field_id = ?",
                 (price, row[0])
             )
             conn.commit()
             return True
 
-    def set_commodity_cache(self, field_name: str, price: float, timestamp: str) -> bool:
+    def set_cache(self, field_name: str, price: float, timestamp: str) -> bool:
+        """Set an active Investment record's cached price + timestamp, from the last
+        successful live fetch."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                """SELECT cp.id FROM commodity_prices cp
-                   JOIN fields f ON f.id = cp.field_id
-                   WHERE f.name = ?""",
+                """SELECT im.field_id FROM investment_meta im
+                   JOIN fields f ON f.id = im.field_id
+                   WHERE f.name = ? AND f.deactivated_at IS NULL""",
                 (field_name.lower(),)
             ).fetchone()
             if row is None:
                 return False
             conn.execute(
-                "UPDATE commodity_prices SET cached_price = ?, cached_at = ? WHERE id = ?",
+                "UPDATE investment_meta SET cached_price = ?, cached_at = ? WHERE field_id = ?",
                 (price, timestamp, row[0])
             )
             conn.commit()
             return True
 
-    def get_commodity_fields(self) -> list:
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """SELECT f.id, f.name, cp.symbol, cp.override_price, cp.cached_price, cp.cached_at
-                   FROM commodity_prices cp
-                   JOIN fields f ON f.id = cp.field_id
-                   WHERE f.deactivated_at IS NULL"""
-            ).fetchall()
-            return rows
-
     def update_cached_price(self, field_id: int, price: float, timestamp: str) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "UPDATE commodity_prices SET cached_price = ?, cached_at = ? WHERE field_id = ?",
+                "UPDATE investment_meta SET cached_price = ?, cached_at = ? WHERE field_id = ?",
                 (price, timestamp, field_id)
             )
             conn.commit()
