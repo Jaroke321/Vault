@@ -11,6 +11,12 @@ MAGENTA  = "\033[35m"
 CYAN     = "\033[36m"
 WHITE    = "\033[37m"
 
+NOTE_MARKER = "*"
+NOTE_LEGEND = "* = has note"
+
+def note_label(name: str, has_note: bool) -> str:
+    return name + NOTE_MARKER if has_note else name
+
 def cat_label(name: str, color: str = CYAN) -> str:
     return f"{BOLD}{color}{name.upper()}{RESET}"
 
