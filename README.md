@@ -88,14 +88,16 @@ the commit had newly created it.
 
 #### Viewing Data
 
+Fields with a note show a trailing `*` in `summary` and `show` table output, with a `* = has note` legend when any noted field appears in that view.
+
 - `show` — table of the last 6 months across all fields
 - `show <n>` — table of the last N months
-- `show <field>` — month-over-month trend for a single field
+- `show <field>` — month-over-month trend for a single field; prints the field's full note when one is set
 - `show <field> <n>` — trend for a single field over the last N months
 - `diff <m1> <y1> <m2> <y2>` — compare all fields between two months (e.g. `diff 1 26 3 26` → January 2026 vs. March 2026)
 - `diff <field> <m1> <y1> <m2> <y2>` — compare one field between two months
 - Months are given as `<month> <year>` pairs; two-digit years mean 20xx (`26` → 2026)
-- `summary` — net worth snapshot: Cash/Retirement/Asset/Investment as assets, Debt as liabilities. A Debt linked via `field set <name> backing <asset>` prints its balance, the backed record's value, and the resulting equity — display only, already reflected in the top-line net worth without double-counting
+- `summary` — net worth snapshot: Cash/Retirement/Asset/Investment as assets, Debt as liabilities. Debts with an APR set show the rate under the balance. A Debt linked via `field set <name> backing <asset>` prints its balance, the backed record's value, and the resulting equity — display only, already reflected in the top-line net worth without double-counting
 
 #### Exporting & Importing Data
 
