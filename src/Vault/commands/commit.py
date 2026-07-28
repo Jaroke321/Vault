@@ -39,17 +39,15 @@ class CommitCommand(BaseCommand):
     ####################################
     def _apply_and_capture(self, current_commit, batch):
         """Record one staged commit entry, first capturing the prior row (or None if it
-        didn't exist) so the batch can be undone later."""
+        didn't exist) so the batch can be undone later. record_value/get_value_row
+        resolve the record's category internally, so there's no kind to branch on
+        here — every category routes through the same two calls."""
 
-        field_name, month, value, kind = current_commit
-        if kind == "value":
-            prior = self.db.get_value_row(field_name, month)
-            self.db.record_value(field_name, month, value)
-        else:
-            prior = self.db.get_asset_value_row(field_name, month)
-            self.db.record_asset_value(field_name, month, value)
+        field_name, month, value = current_commit
+        prior = self.db.get_value_row(field_name, month)
+        self.db.record_value(field_name, month, value)
 
-        batch.append((kind, field_name, month, value, prior))
+        batch.append((field_name, month, value, prior))
 
     def _commit_all(self):
         batch = []
@@ -106,18 +104,12 @@ class CommitCommand(BaseCommand):
 
         for _ in range(pop_count):
             batch = self._undo_stack.pop()["entries"]
-            for kind, field_name, month, _value, prior in reversed(batch):
+            for field_name, month, _value, prior in reversed(batch):
                 if prior is None:
-                    if kind == "value":
-                        self.db.delete_value(field_name, month)
-                    else:
-                        self.db.delete_asset_value(field_name, month)
+                    self.db.delete_value(field_name, month)
                 else:
                     prior_value, recorded_at = prior
-                    if kind == "value":
-                        self.db.record_value(field_name, month, prior_value, recorded_at)
-                    else:
-                        self.db.record_asset_value(field_name, month, prior_value, recorded_at)
+                    self.db.record_value(field_name, month, prior_value, recorded_at)
 
         if pop_count < count:
             print(f"Only {pop_count} commit(s) to undo — reversed all of them.")
@@ -133,7 +125,7 @@ class CommitCommand(BaseCommand):
         rows = []
         for i, batch in enumerate(reversed(self._undo_stack), start=1):
             when = batch["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-            for _kind, field_name, month, value, _prior in batch["entries"]:
+            for field_name, month, value, _prior in batch["entries"]:
                 rows.append([str(i), when, field_name, month, str(value)])
 
         widths = [len(h) for h in headers]

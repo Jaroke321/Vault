@@ -2,6 +2,9 @@ import sqlite3
 import datetime
 from pathlib import Path
 
+from .data_types import CATEGORIES, FieldStatus
+from .price_fetcher import PriceFetcher
+
 
 class DBHandler:
 
@@ -13,222 +16,295 @@ class DBHandler:
         self.init_db()
 
     def init_db(self):
+        """Wipe-and-recreate schema — no migration. The fixed CATEGORIES registry
+        (data_types/__init__.py) drives table creation: one snapshot table and, where
+        declared, one meta table per category, alongside the shared fields registry."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS categories (
-                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    unit TEXT NOT NULL DEFAULT '$'
-                )
-            """)
-            conn.execute("""
                 CREATE TABLE IF NOT EXISTS fields (
                     id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name           TEXT NOT NULL UNIQUE,
-                    category_id    INTEGER NOT NULL REFERENCES categories(id),
-                    created_at     TEXT NOT NULL,
+                    name           TEXT    NOT NULL,
+                    category       TEXT    NOT NULL,
+                    note           TEXT,
+                    status         TEXT    NOT NULL DEFAULT 'active',
+                    replaces_id    INTEGER REFERENCES fields(id),
+                    created_at     TEXT    NOT NULL,
                     deactivated_at TEXT
                 )
             """)
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS snapshots (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    field_id    INTEGER NOT NULL REFERENCES fields(id),
-                    month       TEXT NOT NULL,
-                    value       REAL NOT NULL,
-                    recorded_at TEXT NOT NULL,
-                    UNIQUE(field_id, month)
-                )
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_fields_active_name
+                ON fields(name) WHERE deactivated_at IS NULL
             """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS debt_asset_snapshots (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    field_id    INTEGER NOT NULL REFERENCES fields(id),
-                    month       TEXT NOT NULL,
-                    asset_value REAL NOT NULL,
-                    recorded_at TEXT NOT NULL,
-                    UNIQUE(field_id, month)
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS commodity_prices (
-                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    field_id       INTEGER NOT NULL UNIQUE REFERENCES fields(id),
-                    symbol         TEXT NOT NULL,
-                    override_price REAL,
-                    cached_price   REAL,
-                    cached_at      TEXT
-                )
-            """)
-            self._migrate(conn)
+            for category in CATEGORIES.values():
+                conn.execute(category.snapshot_ddl())
+                meta_ddl = category.meta_ddl()
+                if meta_ddl is not None:
+                    conn.execute(meta_ddl)
             conn.commit()
 
-    def _migrate(self, conn):
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(categories)").fetchall()]
-        if "unit" not in cols:
-            conn.execute("ALTER TABLE categories ADD COLUMN unit TEXT NOT NULL DEFAULT '$'")
-            conn.commit()
-
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "commodity_prices" not in tables:
-            conn.execute("""
-                CREATE TABLE commodity_prices (
-                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    field_id       INTEGER NOT NULL UNIQUE REFERENCES fields(id),
-                    symbol         TEXT NOT NULL,
-                    override_price REAL,
-                    cached_price   REAL,
-                    cached_at      TEXT
-                )
-            """)
-            conn.commit()
-
-    def add_category(self, name: str) -> int:
-        name = name.lower()
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,))
-            conn.commit()
-            row = conn.execute("SELECT id FROM categories WHERE name = ?", (name,)).fetchone()
-            return row[0]
+    def get_categories(self) -> list:
+        """Return the fixed category names, sorted. Categories are code-defined
+        (CATEGORIES) — there is no runtime creation, unlike the old categories table."""
+        return sorted(CATEGORIES.keys())
 
     def add_field(self, name: str, category: str) -> bool:
+        """Register a new record under `category`. Categories are fixed — an unknown
+        category is rejected. Never reactivates a previously closed record: re-adding a
+        name mints a brand new row, so a sold-then-rebought instance (e.g. house ->
+        new house) never merges snapshot series with its predecessor. A duplicate
+        *active* name is rejected via the ux_fields_active_name unique index."""
         name = name.lower()
         category = category.lower()
-        category_id = self.add_category(category)
+        if category not in CATEGORIES:
+            return False
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            # Check if a deactivated field with this name exists — reactivate it
-            row = conn.execute(
-                "SELECT id, deactivated_at FROM fields WHERE name = ?", (name,)
-            ).fetchone()
-            if row is not None:
-                field_id, deactivated_at = row
-                if deactivated_at is not None:
-                    conn.execute(
-                        "UPDATE fields SET deactivated_at = NULL, category_id = ? WHERE id = ?",
-                        (category_id, field_id)
-                    )
-                    conn.commit()
-                    return True
-                else:
-                    return False  # Already active with this name
             try:
                 conn.execute(
-                    "INSERT INTO fields (name, category_id, created_at, deactivated_at) VALUES (?, ?, ?, NULL)",
-                    (name, category_id, datetime.datetime.now().isoformat())
+                    "INSERT INTO fields (name, category, created_at) VALUES (?, ?, ?)",
+                    (name, category, datetime.datetime.now().isoformat())
                 )
                 conn.commit()
                 return True
             except sqlite3.IntegrityError:
                 return False
 
-    def deactivate_field(self, name: str) -> bool:
+    def close_field(self, name: str, reason: str = FieldStatus.CLOSED.value) -> bool:
+        """Close (soft-delete) the active record named `name`, tagging it with a
+        lifecycle reason. History is preserved; the name frees up for reuse once
+        closed. Returns False for an invalid reason or no matching active record."""
+        if reason not in FieldStatus.values():
+            return False
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             cursor = conn.execute(
-                "UPDATE fields SET deactivated_at = ? WHERE name = ? AND deactivated_at IS NULL",
-                (datetime.datetime.now().isoformat(), name.lower())
+                "UPDATE fields SET deactivated_at = ?, status = ? WHERE name = ? AND deactivated_at IS NULL",
+                (datetime.datetime.now().isoformat(), reason, name.lower())
             )
             conn.commit()
             return cursor.rowcount == 1
 
-    def set_category_unit(self, category: str, unit: str) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "UPDATE categories SET unit = ? WHERE name = ?",
-                (unit.strip(), category.lower())
-            )
-            conn.commit()
-            return cursor.rowcount == 1
-
-    def get_field_unit(self, field_name: str) -> str:
+    def get_field_category(self, name: str) -> str | None:
+        """Return the active record's category name, or None if no active record
+        matches."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                """SELECT c.unit FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE f.name = ? AND f.deactivated_at IS NULL""",
-                (field_name.lower(),)
+                "SELECT category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),)
             ).fetchone()
-        return row[0] if row else "$"
-
-    def get_active_fields(self) -> list:
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """SELECT f.name, c.name, c.unit
-                   FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE f.deactivated_at IS NULL
-                   ORDER BY c.name, f.name"""
-            ).fetchall()
-            return rows
-
-    def get_categories(self) -> list:
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT name FROM categories ORDER BY name"
-            ).fetchall()
-            return [c[0] for c in rows]
+        return row[0] if row is not None else None
 
     def get_fields_by_category(self, category_name: str) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
-                """SELECT f.name
-                   FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE c.name = ? AND f.deactivated_at IS NULL
-                   ORDER BY f.name""",
-                (category_name,)
+                "SELECT name FROM fields WHERE category = ? AND deactivated_at IS NULL ORDER BY name",
+                (category_name.lower(),)
             ).fetchall()
-            return [r[0] for r in rows]
+        return [r[0] for r in rows]
 
-    def record_value(self, field_name: str, month: str, value: float, recorded_at: str | None = None) -> bool:
+    def _resolve_unit(self, conn, category_cls, field_id: int) -> str:
+        """Resolve a record's display unit: fixed for monetary categories, or read
+        from its meta table for priced categories (Investment) whose unit varies
+        per-record. Falls back to the class default if no meta row exists yet."""
+        if not category_cls.is_priced:
+            return category_cls.display_unit()
+        row = conn.execute(
+            f"SELECT * FROM {category_cls.meta_table} WHERE field_id = ?", (field_id,)
+        ).fetchone()
+        return category_cls.display_unit(row)
+
+    def get_field_unit(self, field_name: str) -> str:
+        """Return the active record's display unit, or "$" if no active record
+        matches."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
             row = conn.execute(
-                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
                 (field_name.lower(),)
             ).fetchone()
             if row is None:
+                return "$"
+            field_id, category = row
+            return self._resolve_unit(conn, CATEGORIES[category], field_id)
+
+    def get_active_fields(self) -> list:
+        """Return (name, category, unit) for every active record, ordered by
+        category then name."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT id, name, category FROM fields WHERE deactivated_at IS NULL ORDER BY category, name"
+            ).fetchall()
+            return [
+                (name, category, self._resolve_unit(conn, CATEGORIES[category], field_id))
+                for field_id, name, category in rows
+            ]
+
+    def set_note(self, name: str, note: str) -> bool:
+        """Attach a free-text note to any active record."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "UPDATE fields SET note = ? WHERE name = ? AND deactivated_at IS NULL",
+                (note, name.lower())
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def set_status(self, name: str, status: str) -> bool:
+        """Relabel an active record's lifecycle status directly, independent of
+        closing it (e.g. correcting a status set via `field remove`). Rejects
+        anything outside FieldStatus."""
+        if status not in FieldStatus.values():
+            return False
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "UPDATE fields SET status = ? WHERE name = ? AND deactivated_at IS NULL",
+                (status, name.lower())
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def set_apr(self, name: str, apr: float) -> bool:
+        """Set an active record's interest rate when its category declares has_apr."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            resolved = self._field_and_category(conn, name)
+            if resolved is None:
                 return False
-            field_id = row[0]
-            if recorded_at is None:
-                recorded_at = datetime.datetime.now().isoformat()
+            field_id, category_cls = resolved
+            if not category_cls.has_apr or category_cls.meta_table is None:
+                return False
             conn.execute(
-                """INSERT INTO snapshots (field_id, month, value, recorded_at)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT(field_id, month)
-                   DO UPDATE SET value = excluded.value,
-                                 recorded_at = excluded.recorded_at""",
-                (field_id, month, value, recorded_at)
+                f"""INSERT INTO {category_cls.meta_table} (field_id, apr) VALUES (?, ?)
+                   ON CONFLICT(field_id) DO UPDATE SET apr = excluded.apr""",
+                (field_id, apr)
             )
             conn.commit()
             return True
 
-    def record_asset_value(self, field_name: str, month: str, asset_value: float, recorded_at: str | None = None) -> bool:
+    def set_backing(self, name: str, backing_name: str) -> bool:
+        """Link a record to an active asset-side backing record when its category
+        declares supports_backing — purely for the display-only balance/value/equity
+        trio in `summary`; net worth is unaffected either way, since the backing
+        record's value is already counted on its own side of the ledger."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                """SELECT f.id FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE f.name = ?
-                     AND f.deactivated_at IS NULL
-                     AND c.name = 'debt'""",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
+            source = self._field_and_category(conn, name)
+            if source is None:
                 return False
-            field_id = row[0]
+            field_id, category_cls = source
+            if not category_cls.supports_backing or category_cls.meta_table is None:
+                return False
+
+            backing = self._field_and_category(conn, backing_name)
+            if backing is None or backing[1].is_liability:
+                return False
+
+            backing_id = backing[0]
+            conn.execute(
+                f"""INSERT INTO {category_cls.meta_table} (field_id, backing_id) VALUES (?, ?)
+                   ON CONFLICT(field_id) DO UPDATE SET backing_id = excluded.backing_id""",
+                (field_id, backing_id)
+            )
+            conn.commit()
+            return True
+
+    def clear_backing(self, name: str) -> bool:
+        """Remove a record's backing link when its category declares supports_backing."""
+        with sqlite3.connect(self.db_path) as conn:
+            resolved = self._field_and_category(conn, name)
+            if resolved is None:
+                return False
+            field_id, category_cls = resolved
+            if not category_cls.supports_backing or category_cls.meta_table is None:
+                return False
+            cursor = conn.execute(
+                f"UPDATE {category_cls.meta_table} SET backing_id = NULL WHERE field_id = ?",
+                (field_id,),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def set_replaces(self, name: str, old_name: str) -> bool:
+        """Mark the active record `name` as the successor of the most recent record
+        previously named `old_name` (its own predecessor, e.g. after a sell/rebuy).
+        Purely informational for future reporting — no snapshot data is merged."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            resolved = self._field_and_category(conn, name)
+            if resolved is None:
+                return False
+            field_id, _ = resolved
+
+            old_row = conn.execute(
+                """SELECT id FROM fields WHERE name = ? AND id != ?
+                   ORDER BY created_at DESC LIMIT 1""",
+                (old_name.lower(), field_id)
+            ).fetchone()
+            if old_row is None:
+                return False
+
+            conn.execute(
+                "UPDATE fields SET replaces_id = ? WHERE id = ?", (old_row[0], field_id)
+            )
+            conn.commit()
+            return True
+
+    def set_investment_symbol(self, name: str, symbol: str) -> bool:
+        """Set (or change) a priced record's price-tracking symbol, recomputing its
+        display unit alongside it (troy oz/etc. for known commodities, 'shares' for
+        pass-through stock/ETF tickers). Only valid for an active is_priced record."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            resolved = self._field_and_category(conn, name)
+            if resolved is None:
+                return False
+            field_id, category_cls = resolved
+            if not category_cls.is_priced or category_cls.meta_table is None:
+                return False
+            resolved_symbol = PriceFetcher.resolve_symbol(symbol)
+            unit = PriceFetcher.SYMBOL_TO_UNIT.get(resolved_symbol, "shares")
+            conn.execute(
+                f"""INSERT INTO {category_cls.meta_table} (field_id, unit, symbol) VALUES (?, ?, ?)
+                   ON CONFLICT(field_id) DO UPDATE SET unit = excluded.unit,
+                                                        symbol = excluded.symbol""",
+                (field_id, unit, resolved_symbol)
+            )
+            conn.commit()
+            return True
+
+    def _field_and_category(self, conn, field_name: str) -> tuple[int, type] | None:
+        """Resolve an active record's (field_id, category class), or None if no
+        active record matches. Shared by every category-routed snapshot method."""
+        row = conn.execute(
+            "SELECT id, category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+            (field_name.lower(),)
+        ).fetchone()
+        if row is None:
+            return None
+        field_id, category = row
+        return field_id, CATEGORIES[category]
+
+    def record_value(self, field_name: str, month: str, amount: float, recorded_at: str | None = None) -> bool:
+        """Stage a snapshot for an active record, routed to its category's snapshot
+        table and value column ('value' for monetary categories, 'quantity' for
+        Investment). Upserts on (field_id, month)."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            resolved = self._field_and_category(conn, field_name)
+            if resolved is None:
+                return False
+            field_id, category_cls = resolved
             if recorded_at is None:
                 recorded_at = datetime.datetime.now().isoformat()
+            table, column = category_cls.snapshot_table, category_cls.value_column
             conn.execute(
-                """INSERT INTO debt_asset_snapshots (field_id, month, asset_value, recorded_at)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT(field_id, month)
-                   DO UPDATE SET asset_value = excluded.asset_value,
-                                 recorded_at = excluded.recorded_at""",
-                (field_id, month, asset_value, recorded_at)
+                f"""INSERT INTO {table} (field_id, month, {column}, recorded_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(field_id, month)
+                    DO UPDATE SET {column} = excluded.{column},
+                                  recorded_at = excluded.recorded_at""",
+                (field_id, month, amount, recorded_at)
             )
             conn.commit()
             return True
@@ -236,81 +312,81 @@ class DBHandler:
     def delete_value(self, field_name: str, month: str) -> bool:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
+            resolved = self._field_and_category(conn, field_name)
+            if resolved is None:
                 return False
-            field_id = row[0]
+            field_id, category_cls = resolved
             cursor = conn.execute(
-                "DELETE FROM snapshots WHERE field_id = ? AND month = ?",
+                f"DELETE FROM {category_cls.snapshot_table} WHERE field_id = ? AND month = ?",
                 (field_id, month)
             )
             conn.commit()
             return cursor.rowcount == 1
 
-    def delete_asset_value(self, field_name: str, month: str) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                """SELECT f.id FROM fields f
-                   JOIN categories c ON c.id = f.category_id
-                   WHERE f.name = ?
-                     AND f.deactivated_at IS NULL
-                     AND c.name = 'debt'""",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
-                return False
-            field_id = row[0]
-            cursor = conn.execute(
-                "DELETE FROM debt_asset_snapshots WHERE field_id = ? AND month = ?",
-                (field_id, month)
-            )
-            conn.commit()
-            return cursor.rowcount == 1
+    def _union_months(self, conn, limit: int | None = None) -> list[str]:
+        """Distinct months across every category's snapshot table, ascending. With a
+        limit, returns only the most recent N months (still ascending)."""
+        parts = " UNION ALL ".join(f"SELECT month FROM {c.snapshot_table}" for c in CATEGORIES.values())
+        if limit is None:
+            rows = conn.execute(f"SELECT DISTINCT month FROM ({parts}) ORDER BY month").fetchall()
+            return [r[0] for r in rows]
+        rows = conn.execute(
+            f"SELECT DISTINCT month FROM ({parts}) ORDER BY month DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return sorted(r[0] for r in rows)
+
+    def _snapshot_rows(
+        self, conn, months: list[str] | None = None, field_names: list[str] | None = None
+    ):
+        """Yield (field_name, month, amount) across every category's snapshot table,
+        for active records only, optionally filtered to specific months and/or names."""
+        for category_cls in CATEGORIES.values():
+            clauses = ["f.deactivated_at IS NULL"]
+            params: list = []
+            if months is not None:
+                clauses.append(f"s.month IN ({','.join('?' * len(months))})")
+                params.extend(months)
+            if field_names is not None:
+                clauses.append(f"f.name IN ({','.join('?' * len(field_names))})")
+                params.extend(field_names)
+            rows = conn.execute(
+                f"""SELECT f.name, s.month, s.{category_cls.value_column}
+                    FROM {category_cls.snapshot_table} s
+                    JOIN fields f ON f.id = s.field_id
+                    WHERE {' AND '.join(clauses)}""",
+                params,
+            ).fetchall()
+            yield from rows
 
     def get_history(self, field_name: str = None, months: int = 6):
         if field_name is not None:
             with sqlite3.connect(self.db_path) as conn:
+                resolved = self._field_and_category(conn, field_name)
+                if resolved is None:
+                    return []
+                field_id, category_cls = resolved
                 rows = conn.execute(
-                    """SELECT s.month, s.value
-                       FROM snapshots s
-                       JOIN fields f ON f.id = s.field_id
-                       WHERE f.name = ?
-                       ORDER BY s.month DESC
-                       LIMIT ?""",
-                    (field_name.lower(), months)
+                    f"""SELECT month, {category_cls.value_column}
+                        FROM {category_cls.snapshot_table}
+                        WHERE field_id = ?
+                        ORDER BY month DESC
+                        LIMIT ?""",
+                    (field_id, months)
                 ).fetchall()
             rows.reverse()
             return rows
         else:
             with sqlite3.connect(self.db_path) as conn:
-                month_rows = conn.execute(
-                    "SELECT DISTINCT month FROM snapshots ORDER BY month DESC LIMIT ?",
-                    (months,)
-                ).fetchall()
-                month_list = sorted([r[0] for r in month_rows])
+                month_list = self._union_months(conn, limit=months)
 
                 if not month_list:
                     return ([], [], {})
 
                 active_fields = self.get_active_fields()
 
-                placeholders = ",".join("?" * len(month_list))
-                snapshot_rows = conn.execute(
-                    f"""SELECT f.name, s.month, s.value
-                        FROM snapshots s
-                        JOIN fields f ON f.id = s.field_id
-                        WHERE f.deactivated_at IS NULL
-                          AND s.month IN ({placeholders})""",
-                    month_list
-                ).fetchall()
-
-            data = {}
-            for field, month, value in snapshot_rows:
-                data.setdefault(field, {})[month] = value
+                data = {}
+                for name, month, amount in self._snapshot_rows(conn, months=month_list):
+                    data.setdefault(name, {})[month] = amount
 
             return (month_list, active_fields, data)
 
@@ -319,34 +395,21 @@ class DBHandler:
         month on record, not limited to a recent window. Same 3-tuple shape as
         get_history()'s all-fields form: (month_list, active_fields, data)."""
         with sqlite3.connect(self.db_path) as conn:
-            month_rows = conn.execute(
-                "SELECT DISTINCT month FROM snapshots ORDER BY month"
-            ).fetchall()
-            month_list = [r[0] for r in month_rows]
+            month_list = self._union_months(conn)
 
             if not month_list:
                 return ([], [], {})
 
             active_fields = self.get_active_fields()
 
-            placeholders = ",".join("?" * len(month_list))
-            snapshot_rows = conn.execute(
-                f"""SELECT f.name, s.month, s.value
-                    FROM snapshots s
-                    JOIN fields f ON f.id = s.field_id
-                    WHERE f.deactivated_at IS NULL
-                      AND s.month IN ({placeholders})""",
-                month_list
-            ).fetchall()
-
-        data = {}
-        for field, month, value in snapshot_rows:
-            data.setdefault(field, {})[month] = value
+            data = {}
+            for name, month, amount in self._snapshot_rows(conn, months=month_list):
+                data.setdefault(name, {})[month] = amount
 
         return (month_list, active_fields, data)
 
     def get_field_values(self, field_names: list[str]) -> dict[str, dict[str, float]]:
-        """Return {field_name: {month: value}} from snapshots for the given fields.
+        """Return {field_name: {month: value}} for the given *active* records.
 
         Names are matched case-insensitively and returned lower-cased. Empty input
         returns {} without querying.
@@ -355,200 +418,204 @@ class DBHandler:
             return {}
 
         lowered = [name.lower() for name in field_names]
-        placeholders = ",".join("?" * len(lowered))
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                f"""SELECT f.name, s.month, s.value
-                    FROM snapshots s
-                    JOIN fields f ON f.id = s.field_id
-                    WHERE f.name IN ({placeholders})""",
-                lowered,
-            ).fetchall()
-
-        data: dict[str, dict[str, float]] = {}
-        for field, month, value in rows:
-            data.setdefault(field, {})[month] = value
+            data: dict[str, dict[str, float]] = {}
+            for name, month, amount in self._snapshot_rows(conn, field_names=lowered):
+                data.setdefault(name, {})[month] = amount
         return data
 
     def get_values_for_month(self, month: str) -> dict[str, float]:
-        """Return {field_name: value} for active fields at the given month.
+        """Return {field_name: amount} for active records at the given month, unioned
+        across every category's snapshot table.
 
         Returns {} when the month has no rows — callers distinguish missing data
         from zero by key absence, not by a sentinel value.
         """
+        results: dict[str, float] = {}
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """SELECT f.name, s.value
-                   FROM snapshots s
-                   JOIN fields f ON f.id = s.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND s.month = ?""",
-                (month,),
-            ).fetchall()
-
-        return {field: value for field, value in rows}
+            for category_cls in CATEGORIES.values():
+                rows = conn.execute(
+                    f"""SELECT f.name, s.{category_cls.value_column}
+                        FROM {category_cls.snapshot_table} s
+                        JOIN fields f ON f.id = s.field_id
+                        WHERE f.deactivated_at IS NULL
+                          AND s.month = ?""",
+                    (month,),
+                ).fetchall()
+                for name, amount in rows:
+                    results[name] = amount
+        return results
 
     def get_value(self, field_name: str, month: str) -> float | None:
-        """Return the snapshot value for one active field+month, or None if absent."""
+        """Return the snapshot amount for one active record+month, or None if absent."""
         with sqlite3.connect(self.db_path) as conn:
+            resolved = self._field_and_category(conn, field_name)
+            if resolved is None:
+                return None
+            field_id, category_cls = resolved
             row = conn.execute(
-                """SELECT s.value
-                   FROM snapshots s
-                   JOIN fields f ON f.id = s.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND f.name = ?
-                     AND s.month = ?""",
-                (field_name.lower(), month),
-            ).fetchone()
-        return float(row[0]) if row is not None else None
-
-    def get_asset_value(self, field_name: str, month: str) -> float | None:
-        """Return the debt asset snapshot for one active field+month, or None if absent."""
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """SELECT das.asset_value
-                   FROM debt_asset_snapshots das
-                   JOIN fields f ON f.id = das.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND f.name = ?
-                     AND das.month = ?""",
-                (field_name.lower(), month),
+                f"""SELECT {category_cls.value_column} FROM {category_cls.snapshot_table}
+                    WHERE field_id = ? AND month = ?""",
+                (field_id, month),
             ).fetchone()
         return float(row[0]) if row is not None else None
 
     def get_value_row(self, field_name: str, month: str) -> tuple[float, str] | None:
-        """Return (value, recorded_at) for one active field+month, or None if absent."""
+        """Return (amount, recorded_at) for one active record+month, or None if absent."""
         with sqlite3.connect(self.db_path) as conn:
+            resolved = self._field_and_category(conn, field_name)
+            if resolved is None:
+                return None
+            field_id, category_cls = resolved
             row = conn.execute(
-                """SELECT s.value, s.recorded_at
-                   FROM snapshots s
-                   JOIN fields f ON f.id = s.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND f.name = ?
-                     AND s.month = ?""",
-                (field_name.lower(), month),
-            ).fetchone()
-        return (float(row[0]), row[1]) if row is not None else None
-
-    def get_asset_value_row(self, field_name: str, month: str) -> tuple[float, str] | None:
-        """Return (asset_value, recorded_at) for one active field+month, or None if absent."""
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """SELECT das.asset_value, das.recorded_at
-                   FROM debt_asset_snapshots das
-                   JOIN fields f ON f.id = das.field_id
-                   WHERE f.deactivated_at IS NULL
-                     AND f.name = ?
-                     AND das.month = ?""",
-                (field_name.lower(), month),
+                f"""SELECT {category_cls.value_column}, recorded_at
+                    FROM {category_cls.snapshot_table}
+                    WHERE field_id = ? AND month = ?""",
+                (field_id, month),
             ).fetchone()
         return (float(row[0]), row[1]) if row is not None else None
 
     def get_latest_values(self) -> list:
+        """Return (name, category, unit, amount, field_id) for the most recent
+        snapshot of every active record, ordered by category then name. `amount` is
+        the record's raw stored value ('value' for monetary categories, 'quantity'
+        for Investment) — callers resolve USD equivalents per-category (e.g. via
+        CATEGORIES[category].usd_value()). Records with no recorded snapshot yet are
+        excluded, same as before."""
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """SELECT f.name, c.name, c.unit, s.value, das.asset_value, f.id
-                   FROM snapshots s
-                   JOIN fields f     ON f.id = s.field_id
-                   JOIN categories c ON c.id = f.category_id
-                   LEFT JOIN debt_asset_snapshots das
-                          ON das.field_id = s.field_id
-                         AND das.month = (
-                                 SELECT MAX(das2.month)
-                                 FROM debt_asset_snapshots das2
-                                 WHERE das2.field_id = s.field_id
-                             )
-                   WHERE f.deactivated_at IS NULL
-                     AND s.month = (
-                             SELECT MAX(s2.month)
-                             FROM snapshots s2
-                             WHERE s2.field_id = f.id
-                         )
-                   ORDER BY c.name, f.name"""
-            ).fetchall()
-            return rows
+            results = []
+            for category_cls in CATEGORIES.values():
+                table, column = category_cls.snapshot_table, category_cls.value_column
+                rows = conn.execute(
+                    f"""SELECT f.name, f.category, s.{column}, f.id
+                        FROM {table} s
+                        JOIN fields f ON f.id = s.field_id
+                        WHERE f.deactivated_at IS NULL
+                          AND s.month = (
+                                  SELECT MAX(s2.month) FROM {table} s2 WHERE s2.field_id = f.id
+                              )"""
+                ).fetchall()
+                for name, category, amount, field_id in rows:
+                    unit = self._resolve_unit(conn, category_cls, field_id)
+                    results.append((name, category, unit, amount, field_id))
+        results.sort(key=lambda r: (r[1], r[0]))
+        return results
 
-    def set_commodity(self, field_name: str, symbol: str) -> bool:
+    def get_backing_info(self, field_id: int) -> tuple[str, str, float, int] | None:
+        """For a record whose category declares supports_backing, resolve its backing
+        link (if any) to the backed record's name, category, latest recorded amount,
+        and its own field_id (needed to resolve a live price if the backing record is
+        itself priced) — used by `summary` to print the display-only balance/value/
+        equity trio. Returns None if unlinked, the backing record is gone, or it has
+        no recorded value yet."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
-                (field_name.lower(),)
+            source_row = conn.execute(
+                "SELECT category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (field_id,),
             ).fetchone()
-            if row is None:
+            if source_row is None:
+                return None
+            source_cls = CATEGORIES[source_row[0]]
+            if not source_cls.supports_backing or source_cls.meta_table is None:
+                return None
+
+            row = conn.execute(
+                f"SELECT backing_id FROM {source_cls.meta_table} WHERE field_id = ?",
+                (field_id,),
+            ).fetchone()
+            if row is None or row[0] is None:
+                return None
+            backing_id = row[0]
+
+            backing_row = conn.execute(
+                "SELECT name, category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (backing_id,)
+            ).fetchone()
+            if backing_row is None:
+                return None
+            name, category = backing_row
+            table, column = CATEGORIES[category].snapshot_table, CATEGORIES[category].value_column
+
+            value_row = conn.execute(
+                f"""SELECT {column} FROM {table}
+                    WHERE field_id = ?
+                      AND month = (SELECT MAX(month) FROM {table} WHERE field_id = ?)""",
+                (backing_id, backing_id)
+            ).fetchone()
+            if value_row is None:
+                return None
+            return name, category, float(value_row[0]), backing_id
+
+    def get_investment_fields(self) -> list:
+        """Return (field_id, name, symbol, override_price, cached_price, cached_at)
+        for every active is_priced record — the price-fetching surface for
+        PriceFetcher and `investment list`/`investment refresh`. Tagging itself
+        happens at `field add investment <name> <symbol>` time via
+        set_investment_symbol; there is no separate tag/untag step."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = []
+            for category_cls in CATEGORIES.values():
+                if not category_cls.is_priced or category_cls.meta_table is None:
+                    continue
+                rows.extend(conn.execute(
+                    f"""SELECT f.id, f.name, m.symbol, m.override_price, m.cached_price, m.cached_at
+                       FROM {category_cls.meta_table} m
+                       JOIN fields f ON f.id = m.field_id
+                       WHERE f.deactivated_at IS NULL"""
+                ).fetchall())
+        return rows
+
+    def _priced_field_id(self, conn, field_name: str) -> tuple[int, type] | None:
+        """Resolve an active is_priced record to (field_id, category class), or None."""
+        resolved = self._field_and_category(conn, field_name)
+        if resolved is None:
+            return None
+        field_id, category_cls = resolved
+        if not category_cls.is_priced or category_cls.meta_table is None:
+            return None
+        return field_id, category_cls
+
+    def set_override(self, field_name: str, price) -> bool:
+        """Set (or clear, with price=None) an active is_priced record's manual override."""
+        with sqlite3.connect(self.db_path) as conn:
+            resolved = self._priced_field_id(conn, field_name)
+            if resolved is None:
                 return False
-            field_id = row[0]
+            field_id, category_cls = resolved
             conn.execute(
-                """INSERT INTO commodity_prices (field_id, symbol)
-                   VALUES (?, ?)
-                   ON CONFLICT(field_id) DO UPDATE SET symbol = excluded.symbol""",
-                (field_id, symbol.upper())
+                f"UPDATE {category_cls.meta_table} SET override_price = ? WHERE field_id = ?",
+                (price, field_id)
             )
             conn.commit()
             return True
 
-    def remove_commodity(self, field_name: str) -> bool:
+    def set_cache(self, field_name: str, price: float, timestamp: str) -> bool:
+        """Set an active is_priced record's cached price + timestamp from the last live fetch."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            row = conn.execute(
-                "SELECT id FROM fields WHERE name = ?", (field_name.lower(),)
-            ).fetchone()
-            if row is None:
+            resolved = self._priced_field_id(conn, field_name)
+            if resolved is None:
                 return False
-            cursor = conn.execute(
-                "DELETE FROM commodity_prices WHERE field_id = ?", (row[0],)
-            )
-            conn.commit()
-            return cursor.rowcount == 1
-
-    def set_commodity_override(self, field_name: str, price) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """SELECT cp.id FROM commodity_prices cp
-                   JOIN fields f ON f.id = cp.field_id
-                   WHERE f.name = ?""",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
-                return False
+            field_id, category_cls = resolved
             conn.execute(
-                "UPDATE commodity_prices SET override_price = ? WHERE id = ?",
-                (price, row[0])
+                f"UPDATE {category_cls.meta_table} SET cached_price = ?, cached_at = ? WHERE field_id = ?",
+                (price, timestamp, field_id)
             )
             conn.commit()
             return True
-
-    def set_commodity_cache(self, field_name: str, price: float, timestamp: str) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """SELECT cp.id FROM commodity_prices cp
-                   JOIN fields f ON f.id = cp.field_id
-                   WHERE f.name = ?""",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
-                return False
-            conn.execute(
-                "UPDATE commodity_prices SET cached_price = ?, cached_at = ? WHERE id = ?",
-                (price, timestamp, row[0])
-            )
-            conn.commit()
-            return True
-
-    def get_commodity_fields(self) -> list:
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """SELECT f.id, f.name, cp.symbol, cp.override_price, cp.cached_price, cp.cached_at
-                   FROM commodity_prices cp
-                   JOIN fields f ON f.id = cp.field_id
-                   WHERE f.deactivated_at IS NULL"""
-            ).fetchall()
-            return rows
 
     def update_cached_price(self, field_id: int, price: float, timestamp: str) -> None:
         with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (field_id,),
+            ).fetchone()
+            if row is None:
+                return
+            category_cls = CATEGORIES[row[0]]
+            if not category_cls.is_priced or category_cls.meta_table is None:
+                return
             conn.execute(
-                "UPDATE commodity_prices SET cached_price = ?, cached_at = ? WHERE field_id = ?",
+                f"UPDATE {category_cls.meta_table} SET cached_price = ?, cached_at = ? WHERE field_id = ?",
                 (price, timestamp, field_id)
             )
             conn.commit()

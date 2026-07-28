@@ -11,14 +11,19 @@ class HelpCommand(BaseCommand):
 
     HELP_TEXT = """
   Vault Commands:
-    field add <category> <name>          Register a new tracked field
-    field remove <name>                  Deactivate a field (history preserved)
-    field list                           Show all active fields by category
-    field set <category> unit <unit>     Set display unit for a category (default: $)
+    field add cash|retirement|asset|debt <name>   Register a new record
+    field add investment <name> <symbol>          Register an investment record (symbol required)
+    field remove <name> [reason]                  Close a record (reason: active|sold|paid_off|closed; default: closed)
+    field list                                    Show all active records by category
+    field set <name> note <text>                  Attach a free-text note
+    field set <name> apr <rate>                   Set a debt's interest rate
+    field set <name> symbol <symbol>              Change an investment's price-tracking symbol
+    field set <name> backing <asset> | clear      Link (or unlink) a debt to a backing asset-side record
+    field set <name> replaces <old-name>          Mark this record as the successor of a prior one
+    field set <name> status <status>              Relabel a record's lifecycle status
 
     update                               Interactively stage values for all fields (default: current month)
-    update <field> <value> [-m YYYY-MM]  Stage a value for a single field
-    update <field> <value> <asset> [-m YYYY-MM]  Stage value + asset for a debt field
+    update <field> <value> [-m YYYY-MM]  Stage a value for a single field (value or quantity, per its category)
 
     commit                        Commit all pending staged updates to the database
     commit <n> [n ...]            Commit one or more pending updates by index
@@ -40,13 +45,11 @@ class HelpCommand(BaseCommand):
     export csv <filename>         Dump full recorded history to CSV (file)
     import csv <filename>         Import a wide-format CSV back into the database
 
-    commodity tag <field> <commodity>     Tag a field as a commodity or stock/ETF (e.g. 'gold', 'XAU', or 'AAPL')
-    commodity untag <field>               Remove commodity tag from a field
-    commodity override <field> <price>    Lock a manual price per unit for this field
-    commodity override <field> clear      Remove price lock (use live/cached price)
-    commodity list                        Show all tagged fields with current prices and source
-    commodity options                     Show known commodity symbols, names, and units
-    commodity refresh                     Re-fetch live prices for all tagged fields
+    investment override <field> <price>   Lock a manual price per unit for this field
+    investment override <field> clear     Remove price lock (use live/cached price)
+    investment list                       Show all investment records with current prices and source
+    investment options                    Show known commodity symbols, names, and units
+    investment refresh                    Re-fetch live prices for all investment records
 
     help / h                      Show this help message
     <command> usage               Detailed help for any command

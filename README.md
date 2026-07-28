@@ -4,7 +4,7 @@ A simple Python CLI to track your personal finance and asset portfolio.
 
 ## Overview
 
-Vault helps you manage financial fields across categories (e.g. savings, investments, debt), record monthly snapshots of their values, and compute your net worth over time. Fields can have custom units, debt fields support asset value tracking to calculate equity, and physical commodity holdings (gold, silver, etc.) are automatically valued using live market prices.
+Vault tracks records across a fixed set of categories — **Cash**, **Retirement**, **Asset**, **Debt**, and **Investment** — records monthly snapshots of their values, and computes your net worth over time. Debt records can be linked to a backing asset (e.g. a mortgage to its house) to show balance/value/equity together, and Investment holdings (physical commodities, stocks, ETFs) are automatically valued using live market prices.
 
 ## Requirements
 
@@ -52,18 +52,25 @@ Type `<command> usage` for detailed help on any command (e.g. `update usage`).
 
 #### Field Management
 
-- `field add <category> <name>` — register a new tracked field under a category
-- `field remove <name>` — deactivate a field (history is preserved)
-- `field list` — list all active fields grouped by category
-- `field set <category> unit <unit>` — set the display unit for a category (default: `$`)
+Categories are fixed and code-defined — `cash`, `retirement`, `asset`, `debt`, `investment` — not created at runtime. Each has its own typed fields: `debt` carries an optional interest rate and backing link; `investment` carries a required price-tracking symbol and a per-record unit (so metals in troy oz and stocks in shares can coexist under the same category).
+
+- `field add cash|retirement|asset|debt <name>` — register a new record
+- `field add investment <name> <symbol>` — register an investment record; the symbol is required and its unit is derived from it (run `investment options` for known symbols, or use any stock/ETF ticker)
+- `field remove <name> [reason]` — close a record, history preserved (reason: `active`/`sold`/`paid_off`/`closed`, default `closed`). Re-adding the same name afterward creates a brand-new record rather than reopening the old one — so selling a house and buying a new one under the same name gives two independent snapshot series, not one record with a value that appears to jump
+- `field list` — list all active records grouped by category, each showing its own unit
+- `field set <name> note <text>` — attach a free-text note to any record
+- `field set <name> apr <rate>` — set a debt's interest rate
+- `field set <name> symbol <symbol>` — change an investment's price-tracking symbol
+- `field set <name> backing <asset>` / `field set <name> backing clear` — link (or unlink) a debt to an active asset-side record (Asset, Cash, Retirement, or Investment) — purely for the display-only balance/value/equity view in `summary`; it never affects the net worth totals, since the backing record's value is already counted through its own row
+- `field set <name> replaces <old-name>` — mark this record as the successor of a prior one sharing the same name (for future reporting continuity)
+- `field set <name> status <status>` — relabel a record's lifecycle status directly, independent of closing it
 
 #### Recording Values
 
 Values are staged as pending commits and must be committed to be saved.
 
 - `update` — interactive mode: prompts for all active fields for the current month
-- `update <field> <value>` — stage a value for a single field
-- `update <field> <value> <asset_value>` — stage a value + asset value for a debt field
+- `update <field> <value>` — stage a value for a single field (a dollar value for monetary categories, a quantity for Investment)
 
 #### Committing Values
 
@@ -87,7 +94,7 @@ the commit had newly created it.
 - `diff <m1> <y1> <m2> <y2>` — compare all fields between two months (e.g. `diff 1 26 3 26` → January 2026 vs. March 2026)
 - `diff <field> <m1> <y1> <m2> <y2>` — compare one field between two months
 - Months are given as `<month> <year>` pairs; two-digit years mean 20xx (`26` → 2026)
-- `summary` — net worth snapshot with assets, liabilities, and equity breakdown
+- `summary` — net worth snapshot: Cash/Retirement/Asset/Investment as assets, Debt as liabilities. A Debt linked via `field set <name> backing <asset>` prints its balance, the backed record's value, and the resulting equity — display only, already reflected in the top-line net worth without double-counting
 
 #### Exporting & Importing Data
 
@@ -97,23 +104,22 @@ the commit had newly created it.
 
 The CSV is "wide": one row per month, one column per active field, with raw numeric values (no currency formatting) so it can be used directly in a spreadsheet. The first two rows are headers — a `category` row followed by the `month`/field-name row — so each field column carries its category alongside its name. Deactivated fields are excluded, consistent with `show`/`summary`.
 
-On import, fields and categories named in the header that don't exist yet are auto-created. A cell with no existing value for that field/month is committed immediately; a cell that would overwrite an existing value is staged as a pending commit instead (visible via `show` / `commit`), so nothing is silently overwritten. Empty cells are skipped; non-numeric cells are skipped with a warning.
+On import, fields named in the header under a known, non-`investment` category that don't exist yet are auto-created. A cell with no existing value for that field/month is committed immediately; a cell that would overwrite an existing value is staged as a pending commit instead (visible via `show` / `commit`), so nothing is silently overwritten. Empty cells are skipped; non-numeric cells are skipped with a warning; columns naming an unrecognized category are reported as errors and skipped.
 
 **Legacy CSVs** (exported before the category header row existed) still import for columns that name already-active fields. Columns naming unknown fields are reported as errors and skipped — without a category row there is no category to auto-create them under.
 
-**Debt asset values are not round-trippable.** Export only writes balance snapshots, not debt asset values (set via `update <field> <balance> <asset>`). Import therefore only ever populates the balance side of a debt field.
+**Investment columns are never imported**, in either CSV form — a CSV has no way to carry the symbol a fresh investment record needs, and export itself doesn't distinguish a quantity from a plain value, so there's no reliable way to bring that data back in. Import always reports a warning and skips the column; the CSV round trip is value-only.
 
-#### Commodity Pricing
+#### Investment Pricing
 
-Fields with non-monetary units (e.g. `oz`, `g`, `shares`) can be tagged with a commodity symbol or a stock/ETF ticker. On startup, Vault fetches live market prices and uses them to convert quantities to USD in the `summary` output. Prices are cached locally so the last known value is used if a fetch fails.
+Investment records (metals, other commodities, stocks/ETFs) each carry a required price-tracking symbol and a per-record unit, set when the record is created. On startup, Vault fetches live market prices and uses them to convert quantities to USD in the `summary` output. Prices are cached locally so the last known value is used if a fetch fails.
 
-- `commodity tag <field> <symbol>` — tag a field as tracking a commodity (run `commodity options` for the full list) or an arbitrary stock/ETF ticker (e.g. `AAPL`)
-- `commodity untag <field>` — remove the commodity tag from a field
-- `commodity override <field> <price>` — lock a manual price per unit (takes precedence over live prices)
-- `commodity override <field> clear` — remove the price lock and resume using live/cached prices
-- `commodity list` — show all tagged fields with their current price and source (live, cached, or override)
-- `commodity options` — list all known commodity symbols, name aliases, and units, grouped by category (static reference data; works without network)
-- `commodity refresh` — re-fetch live prices mid-session
+- `field add investment <name> <symbol>` — register an investment record (see Field Management above); this is the only way to set its symbol, there is no separate tag/untag step
+- `investment override <field> <price>` — lock a manual price per unit (takes precedence over live prices)
+- `investment override <field> clear` — remove the price lock and resume using live/cached prices
+- `investment list` — show all investment records with their current price and source (live, cached, or override)
+- `investment options` — list all known commodity symbols, name aliases, and units, grouped by category (static reference data; works without network)
+- `investment refresh` — re-fetch live prices mid-session
 
 **Supported symbols:**
 
@@ -135,14 +141,12 @@ Fields with non-monetary units (e.g. `oz`, `g`, `shares`) can be tagged with a c
 | CC     | cocoa                | metric ton  |
 | CT     | cotton               | lb          |
 
-Any other input is treated as a pass-through stock/ETF ticker (a stock's symbol is already its own ticker, unlike the futures-style commodities above). Unlike the fixed list, pass-through tickers have no static typo protection, so `commodity tag` validates them with a live lookup at tag time and rejects anything that doesn't resolve — this means tagging a stock/ETF requires network access, unlike the instant offline tag for `XAU`/etc.
+Any other input is treated as a pass-through stock/ETF ticker (a stock's symbol is already its own ticker, unlike the futures-style commodities above), and its unit defaults to `shares`. Unlike the fixed list, pass-through tickers have no static typo protection, so `field add investment` validates them with a live lookup at add time and rejects anything that doesn't resolve — this means adding a stock/ETF requires network access, unlike the instant offline add for `XAU`/etc.
 
 **Example workflow (metal):**
 
 ```
-field add metals gold_oz
-field set metals unit oz
-commodity tag gold_oz XAU
+field add investment gold_oz XAU
 update gold_oz 5
 commit
 summary
@@ -150,15 +154,13 @@ summary
 
 The `summary` output will show:
 ```
-  gold_oz              5.0000 oz  ~  $16,250.00  (@$3,250.00/oz)
+  gold_oz              5.0000 troy oz  ~  $16,250.00  (@$3,250.00/troy oz)
 ```
 
 **Example workflow (stock/ETF):**
 
 ```
-field add brokerage shares_aapl
-field set brokerage unit shares
-commodity tag shares_aapl AAPL
+field add investment shares_aapl AAPL
 update shares_aapl 12.5
 commit
 summary
@@ -194,10 +196,11 @@ Vault/
     └── Vault/
         ├── __init__.py
         ├── cli.py          # CLI logic and entry point
+        ├── data_types/     # Category classes (Cash, Retirement, Asset, Debt, Investment)
         ├── db_handler.py   # SQLite database layer
         ├── helper.py       # Color codes and formatting utilities
         ├── logger.py       # Logging utility
-        ├── price_fetcher.py # Live commodity price fetching
+        ├── price_fetcher.py # Live investment price fetching
         └── prompt.py       # Interactive prompt implementation
 ```
 

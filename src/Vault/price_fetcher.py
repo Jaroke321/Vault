@@ -34,7 +34,7 @@ class PriceFetcher:
         "CT":  "CT=F",   # Cotton futures
     }
 
-    # Category + display unit per symbol. Static reference data for `commodity
+    # Category + display unit per symbol. Static reference data for `investment
     # options`; groupings mirror the comment sections above — keep all three
     # collections in sync when adding a symbol. All prices are USD.
     SYMBOL_TO_CATEGORY = {
@@ -103,19 +103,19 @@ class PriceFetcher:
         self._field_meta: dict[int, tuple] = {}
 
     def fetch_all(self) -> dict[str, float]:
-        """Fetch live prices for every commodity-tagged field.
+        """Fetch live prices for every active Investment record.
 
         Updates the DB cache for each successful fetch.
         Returns {symbol: price}. Never raises.
         """
 
-        commodity_fields = self.db.get_commodity_fields()
-        if not commodity_fields:
+        investment_fields = self.db.get_investment_fields()
+        if not investment_fields:
             return {}
 
         # Build field_id → meta map and collect unique symbols
         symbols_needed: set[str] = set()
-        for field_id, field_name, symbol, override_price, cached_price, cached_at in commodity_fields:
+        for field_id, field_name, symbol, override_price, cached_price, cached_at in investment_fields:
             self._field_meta[field_id] = (symbol, override_price, cached_price)
             if override_price is None:
                 symbols_needed.add(symbol)
@@ -129,7 +129,7 @@ class PriceFetcher:
 
         # Write back to DB cache and populate in-memory dict
         now = datetime.datetime.now().isoformat()
-        for field_id, field_name, symbol, override_price, cached_price, cached_at in commodity_fields:
+        for field_id, field_name, symbol, override_price, cached_price, cached_at in investment_fields:
             if symbol in fetched:
                 self.db.update_cached_price(field_id, fetched[symbol], now)
                 # Refresh cached value in meta
@@ -139,7 +139,7 @@ class PriceFetcher:
 
         if fetched:
             price_summary = "  ".join(f"{sym}={price:,.2f}" for sym, price in sorted(fetched.items()))
-            self.logger.log(f"Commodity prices fetched: {price_summary}")
+            self.logger.log(f"Investment prices fetched: {price_summary}")
 
         return fetched
 
@@ -147,7 +147,7 @@ class PriceFetcher:
         """Return the best available price for a field, or None if unavailable."""
         meta = self._field_meta.get(field_id)
         if meta is None:
-            # Field is not tagged as a commodity
+            # Field is not an Investment record
             return None
 
         symbol, override_price, cached_price = meta
@@ -166,16 +166,16 @@ class PriceFetcher:
     def probe_symbol(self, symbol: str) -> float | None:
         """Live-fetch a single symbol's price, or None if it can't be resolved.
 
-        Used by 'commodity tag' to validate a pass-through ticker at tag time.
+        Used by 'field add investment' to validate a pass-through ticker at add time.
         """
         return self._fetch_symbol(symbol)
 
     def get_fetch_status(self) -> list[tuple]:
-        """Return display info for each tagged field: (field_name, symbol, price, source, cached_at).
+        """Return display info for each Investment record: (field_name, symbol, price, source, cached_at).
 
         source is one of: 'override', 'live', 'cached', 'unavailable'
         """
-        rows = self.db.get_commodity_fields()
+        rows = self.db.get_investment_fields()
         result = []
         for field_id, field_name, symbol, override_price, cached_price, cached_at in rows:
             if override_price is not None:

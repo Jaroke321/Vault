@@ -1,14 +1,21 @@
 from .base import BaseCommand
+from ..data_types import CATEGORIES, FieldStatus
 
 class FieldCommand(BaseCommand):
 
     call_str = "field" # Tells the prompt the string command in order to call this class
 
     USAGE = """
-  field add <category> <name>          Register a new tracked field
-  field remove <name>                  Deactivate a field (history preserved)
-  field list                           Show all active fields by category
-  field set <category> unit <unit>     Set display unit for a category (default: $)
+  field add cash|retirement|asset|debt <name>   Register a new record
+  field add investment <name> <symbol>          Register an investment record (symbol required)
+  field remove <name> [reason]                  Close a record (reason: active|sold|paid_off|closed; default: closed)
+  field list                                    Show all active records by category
+  field set <name> note <text>                  Attach a free-text note
+  field set <name> apr <rate>                   Set a debt's interest rate
+  field set <name> symbol <symbol>              Change an investment's price-tracking symbol
+  field set <name> backing <asset> | clear      Link (or unlink) a debt to a backing asset-side record
+  field set <name> replaces <old-name>          Mark this record as the successor of a prior one
+  field set <name> status <status>              Relabel a record's lifecycle status
 """
 
     def entry_point(self, options: list):
@@ -19,7 +26,7 @@ class FieldCommand(BaseCommand):
         if not options:
             self.usage()
             return
-        
+
         # Business logic
         sub = options[0]
         if sub in self.sub_commands:
@@ -31,68 +38,150 @@ class FieldCommand(BaseCommand):
     # Sub-commands
     ####################################
     def sub_add(self, options: list):
-        
+
         # Error checking
         if len(options) < 2:
-            print("Usage: field add <category> <name>")
+            self.usage()
             return
-        category, name = options[0], options[1]
+
+        category, name = options[0].lower(), options[1]
         if " " in name or " " in category:
             print("Field and category names cannot contain spaces.")
             return
-        
+
+        if not self._is_a_category_name(category):
+            print(f"Unknown category '{category}'. Supported: {', '.join(self.db.get_categories())}.")
+            return
+
+        is_priced = CATEGORIES[category].is_priced
+        if is_priced:
+            if len(options) != 3:
+                print(f"Usage: field add {category} <name> <symbol>")
+                return
+            symbol = options[2]
+        elif len(options) != 2:
+            print(f"Usage: field add {category} <name>")
+            return
+
         # Business logic
-        success = self.db.add_field(name, category)
-        if success:
-            print(f"Field '{name}' added under category '{category}'.")
-            self.logger.log(f"Field added: {name} (category: {category})")
-        else:
+        if not self.db.add_field(name, category):
             print(f"Field '{name}' already exists.")
+            return
+
+        if is_priced:
+            self.db.set_investment_symbol(name, symbol)
+
+        print(f"Field '{name}' added under category '{category}'.")
+        self.logger.log(f"Field added: {name} (category: {category})")
 
     def sub_remove(self, options: list):
 
         # Error checking
-        if len(options) < 1:
-            print("Usage: field remove <name>")
+        if not options:
+            print("Usage: field remove <name> [reason]")
             return
-        
+
         # Business logic
         name = options[0]
-        success = self.db.deactivate_field(name)
+        reason = options[1] if len(options) > 1 else FieldStatus.CLOSED.value
+
+        success = self.db.close_field(name, reason)
         if success:
-            print(f"Field '{name}' deactivated. History is preserved.")
-            self.logger.log(f"Field deactivated: {name}")
+            print(f"Field '{name}' closed ({reason}). History is preserved.")
+            self.logger.log(f"Field closed: {name} ({reason})")
         else:
-            print(f"No active field named '{name}' found.")
+            valid_reasons = ", ".join(FieldStatus.values())
+            print(f"No active field named '{name}' found, or invalid reason '{reason}' (valid: {valid_reasons}).")
 
     def sub_list(self, options: list):
-        
+
         # Error checking
         fields = self.db.get_active_fields()
         if not fields:
             print("No active fields. Use 'field add <category> <name>' to add one.")
             return
-        
-        # Business logic
+
+        # Business logic — unit is shown per-record (not per-category header), since
+        # Investment records can mix units (e.g. troy oz metals alongside share-based
+        # tickers) within the same category.
         current_cat = None
         for field_name, category_name, unit in fields:
             if category_name != current_cat:
-                unit_str = f" [{unit}]" if unit != "$" else ""
-                print(f"\n  {self.cat_label(category_name)}{unit_str}")
+                print(f"\n  {self.cat_label(category_name)}")
                 current_cat = category_name
-            print(f"    - {field_name}")
+            unit_str = f" [{unit}]" if unit != "$" else ""
+            print(f"    - {field_name}{unit_str}")
         print()
 
     def sub_set(self, options: list):
-        
-        # Error Checking
-        if len(options) != 3:
-            print("Usage: field set <category> unit <unit>")
+
+        # Error checking
+        if len(options) < 2:
+            self.usage()
             return
-        
-        # Business logic
-        category, prop, value = options[0], options[1], options[2]
-        if prop == "unit":
-            success = self.db.set_category_unit(category, value)
+
+        name, prop = options[0], options[1]
+        rest = options[2:]
+
+        if prop == "note":
+            if not rest:
+                print("Usage: field set <name> note <text>")
+                return
+            success = self.db.set_note(name, " ".join(rest))
+            message = f"Note set for '{name}'."
+
+        elif prop == "apr":
+            if len(rest) != 1:
+                print("Usage: field set <name> apr <rate>")
+                return
+            apr = self._parse_float(rest[0])
+            if apr is None:
+                print(f"Invalid APR '{rest[0]}'.")
+                return
+            success = self.db.set_apr(name, apr)
+            message = f"APR set for '{name}': {apr}."
+
+        elif prop == "symbol":
+            if len(rest) != 1:
+                print("Usage: field set <name> symbol <symbol>")
+                return
+            success = self.db.set_investment_symbol(name, rest[0])
+            message = f"Symbol set for '{name}'."
+
+        elif prop == "backing":
+            if len(rest) != 1:
+                print("Usage: field set <name> backing <asset> | field set <name> backing clear")
+                return
+            if rest[0].lower() == "clear":
+                success = self.db.clear_backing(name)
+                message = f"Backing link cleared for '{name}'."
+            else:
+                success = self.db.set_backing(name, rest[0])
+                message = f"'{name}' now backed by '{rest[0]}'."
+
+        elif prop == "replaces":
+            if len(rest) != 1:
+                print("Usage: field set <name> replaces <old-name>")
+                return
+            success = self.db.set_replaces(name, rest[0])
+            message = f"'{name}' marked as successor of '{rest[0]}'."
+
+        elif prop == "status":
+            if len(rest) != 1:
+                print("Usage: field set <name> status <status>")
+                return
+            success = self.db.set_status(name, rest[0])
+            message = f"Status set for '{name}': {rest[0]}."
+
         else:
-            print(f"Unknown property '{prop}'. Supported: unit")
+            print(f"Unknown property '{prop}'. Supported: note, apr, symbol, backing, replaces, status")
+            return
+
+        if success:
+            print(message)
+            self.logger.log(f"Field updated: {name} {prop}")
+        else:
+            print(
+                f"Could not set {prop} for '{name}' — check the record exists, "
+                "is active, and the category is valid for this property."
+            )
