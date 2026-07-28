@@ -11,6 +11,8 @@ class Debt(MonetaryCategory):
     snapshot_table = "debt_snapshots"
     meta_table = "debt_meta"
     is_liability = True
+    has_apr = True
+    supports_backing = True
 
     @classmethod
     def meta_ddl(cls) -> str:

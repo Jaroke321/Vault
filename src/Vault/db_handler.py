@@ -2,7 +2,7 @@ import sqlite3
 import datetime
 from pathlib import Path
 
-from .data_types import CATEGORIES, FieldStatus, Debt, Investment
+from .data_types import CATEGORIES, FieldStatus
 from .price_fetcher import PriceFetcher
 
 
@@ -165,15 +165,17 @@ class DBHandler:
             return cursor.rowcount == 1
 
     def set_apr(self, name: str, apr: float) -> bool:
-        """Set a Debt record's interest rate. Only valid for an active Debt record."""
+        """Set an active record's interest rate when its category declares has_apr."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             resolved = self._field_and_category(conn, name)
-            if resolved is None or resolved[1] is not Debt:
+            if resolved is None:
                 return False
-            field_id, _ = resolved
+            field_id, category_cls = resolved
+            if not category_cls.has_apr or category_cls.meta_table is None:
+                return False
             conn.execute(
-                """INSERT INTO debt_meta (field_id, apr) VALUES (?, ?)
+                f"""INSERT INTO {category_cls.meta_table} (field_id, apr) VALUES (?, ?)
                    ON CONFLICT(field_id) DO UPDATE SET apr = excluded.apr""",
                 (field_id, apr)
             )
@@ -181,24 +183,26 @@ class DBHandler:
             return True
 
     def set_backing(self, name: str, backing_name: str) -> bool:
-        """Link a Debt record to an active asset-side record (Asset, Cash, Retirement,
-        or Investment — anything that isn't itself a liability), purely for the
-        display-only balance/value/equity trio in `summary`; net worth is unaffected
-        either way, since the backing record's value is already counted on its own
-        side of the ledger."""
+        """Link a record to an active asset-side backing record when its category
+        declares supports_backing — purely for the display-only balance/value/equity
+        trio in `summary`; net worth is unaffected either way, since the backing
+        record's value is already counted on its own side of the ledger."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            debt = self._field_and_category(conn, name)
-            if debt is None or debt[1] is not Debt:
+            source = self._field_and_category(conn, name)
+            if source is None:
+                return False
+            field_id, category_cls = source
+            if not category_cls.supports_backing or category_cls.meta_table is None:
                 return False
 
             backing = self._field_and_category(conn, backing_name)
             if backing is None or backing[1].is_liability:
                 return False
 
-            field_id, backing_id = debt[0], backing[0]
+            backing_id = backing[0]
             conn.execute(
-                """INSERT INTO debt_meta (field_id, backing_id) VALUES (?, ?)
+                f"""INSERT INTO {category_cls.meta_table} (field_id, backing_id) VALUES (?, ?)
                    ON CONFLICT(field_id) DO UPDATE SET backing_id = excluded.backing_id""",
                 (field_id, backing_id)
             )
@@ -206,14 +210,17 @@ class DBHandler:
             return True
 
     def clear_backing(self, name: str) -> bool:
-        """Remove a Debt record's backing link, if any."""
+        """Remove a record's backing link when its category declares supports_backing."""
         with sqlite3.connect(self.db_path) as conn:
             resolved = self._field_and_category(conn, name)
-            if resolved is None or resolved[1] is not Debt:
+            if resolved is None:
                 return False
-            field_id, _ = resolved
+            field_id, category_cls = resolved
+            if not category_cls.supports_backing or category_cls.meta_table is None:
+                return False
             cursor = conn.execute(
-                "UPDATE debt_meta SET backing_id = NULL WHERE field_id = ?", (field_id,)
+                f"UPDATE {category_cls.meta_table} SET backing_id = NULL WHERE field_id = ?",
+                (field_id,),
             )
             conn.commit()
             return cursor.rowcount == 1
@@ -244,20 +251,21 @@ class DBHandler:
             return True
 
     def set_investment_symbol(self, name: str, symbol: str) -> bool:
-        """Set (or change) an Investment record's price-tracking symbol, recomputing
-        its display unit alongside it (troy oz/etc. for known commodities, 'shares'
-        for pass-through stock/ETF tickers). Only valid for an active Investment
-        record."""
+        """Set (or change) a priced record's price-tracking symbol, recomputing its
+        display unit alongside it (troy oz/etc. for known commodities, 'shares' for
+        pass-through stock/ETF tickers). Only valid for an active is_priced record."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             resolved = self._field_and_category(conn, name)
-            if resolved is None or resolved[1] is not Investment:
+            if resolved is None:
                 return False
-            field_id, _ = resolved
+            field_id, category_cls = resolved
+            if not category_cls.is_priced or category_cls.meta_table is None:
+                return False
             resolved_symbol = PriceFetcher.resolve_symbol(symbol)
             unit = PriceFetcher.SYMBOL_TO_UNIT.get(resolved_symbol, "shares")
             conn.execute(
-                """INSERT INTO investment_meta (field_id, unit, symbol) VALUES (?, ?, ?)
+                f"""INSERT INTO {category_cls.meta_table} (field_id, unit, symbol) VALUES (?, ?, ?)
                    ON CONFLICT(field_id) DO UPDATE SET unit = excluded.unit,
                                                         symbol = excluded.symbol""",
                 (field_id, unit, resolved_symbol)
@@ -494,15 +502,26 @@ class DBHandler:
         return results
 
     def get_backing_info(self, field_id: int) -> tuple[str, str, float, int] | None:
-        """For a Debt record's field_id, resolve its backing link (if any) to the
-        backed record's name, category, latest recorded amount, and its own field_id
-        (needed to resolve a live price if the backing record is itself priced, e.g.
-        Investment) — used by `summary` to print the display-only balance/value/
+        """For a record whose category declares supports_backing, resolve its backing
+        link (if any) to the backed record's name, category, latest recorded amount,
+        and its own field_id (needed to resolve a live price if the backing record is
+        itself priced) — used by `summary` to print the display-only balance/value/
         equity trio. Returns None if unlinked, the backing record is gone, or it has
         no recorded value yet."""
         with sqlite3.connect(self.db_path) as conn:
+            source_row = conn.execute(
+                "SELECT category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (field_id,),
+            ).fetchone()
+            if source_row is None:
+                return None
+            source_cls = CATEGORIES[source_row[0]]
+            if not source_cls.supports_backing or source_cls.meta_table is None:
+                return None
+
             row = conn.execute(
-                "SELECT backing_id FROM debt_meta WHERE field_id = ?", (field_id,)
+                f"SELECT backing_id FROM {source_cls.meta_table} WHERE field_id = ?",
+                (field_id,),
             ).fetchone()
             if row is None or row[0] is None:
                 return None
@@ -529,61 +548,74 @@ class DBHandler:
 
     def get_investment_fields(self) -> list:
         """Return (field_id, name, symbol, override_price, cached_price, cached_at)
-        for every active Investment record — the price-fetching surface for
+        for every active is_priced record — the price-fetching surface for
         PriceFetcher and `investment list`/`investment refresh`. Tagging itself
         happens at `field add investment <name> <symbol>` time via
         set_investment_symbol; there is no separate tag/untag step."""
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """SELECT f.id, f.name, im.symbol, im.override_price, im.cached_price, im.cached_at
-                   FROM investment_meta im
-                   JOIN fields f ON f.id = im.field_id
-                   WHERE f.deactivated_at IS NULL"""
-            ).fetchall()
+            rows = []
+            for category_cls in CATEGORIES.values():
+                if not category_cls.is_priced or category_cls.meta_table is None:
+                    continue
+                rows.extend(conn.execute(
+                    f"""SELECT f.id, f.name, m.symbol, m.override_price, m.cached_price, m.cached_at
+                       FROM {category_cls.meta_table} m
+                       JOIN fields f ON f.id = m.field_id
+                       WHERE f.deactivated_at IS NULL"""
+                ).fetchall())
         return rows
 
+    def _priced_field_id(self, conn, field_name: str) -> tuple[int, type] | None:
+        """Resolve an active is_priced record to (field_id, category class), or None."""
+        resolved = self._field_and_category(conn, field_name)
+        if resolved is None:
+            return None
+        field_id, category_cls = resolved
+        if not category_cls.is_priced or category_cls.meta_table is None:
+            return None
+        return field_id, category_cls
+
     def set_override(self, field_name: str, price) -> bool:
-        """Set (or clear, with price=None) an active Investment record's manual
-        price override."""
+        """Set (or clear, with price=None) an active is_priced record's manual override."""
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """SELECT im.field_id FROM investment_meta im
-                   JOIN fields f ON f.id = im.field_id
-                   WHERE f.name = ? AND f.deactivated_at IS NULL""",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
+            resolved = self._priced_field_id(conn, field_name)
+            if resolved is None:
                 return False
+            field_id, category_cls = resolved
             conn.execute(
-                "UPDATE investment_meta SET override_price = ? WHERE field_id = ?",
-                (price, row[0])
+                f"UPDATE {category_cls.meta_table} SET override_price = ? WHERE field_id = ?",
+                (price, field_id)
             )
             conn.commit()
             return True
 
     def set_cache(self, field_name: str, price: float, timestamp: str) -> bool:
-        """Set an active Investment record's cached price + timestamp, from the last
-        successful live fetch."""
+        """Set an active is_priced record's cached price + timestamp from the last live fetch."""
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """SELECT im.field_id FROM investment_meta im
-                   JOIN fields f ON f.id = im.field_id
-                   WHERE f.name = ? AND f.deactivated_at IS NULL""",
-                (field_name.lower(),)
-            ).fetchone()
-            if row is None:
+            resolved = self._priced_field_id(conn, field_name)
+            if resolved is None:
                 return False
+            field_id, category_cls = resolved
             conn.execute(
-                "UPDATE investment_meta SET cached_price = ?, cached_at = ? WHERE field_id = ?",
-                (price, timestamp, row[0])
+                f"UPDATE {category_cls.meta_table} SET cached_price = ?, cached_at = ? WHERE field_id = ?",
+                (price, timestamp, field_id)
             )
             conn.commit()
             return True
 
     def update_cached_price(self, field_id: int, price: float, timestamp: str) -> None:
         with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (field_id,),
+            ).fetchone()
+            if row is None:
+                return
+            category_cls = CATEGORIES[row[0]]
+            if not category_cls.is_priced or category_cls.meta_table is None:
+                return
             conn.execute(
-                "UPDATE investment_meta SET cached_price = ?, cached_at = ? WHERE field_id = ?",
+                f"UPDATE {category_cls.meta_table} SET cached_price = ?, cached_at = ? WHERE field_id = ?",
                 (price, timestamp, field_id)
             )
             conn.commit()

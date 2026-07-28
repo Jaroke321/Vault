@@ -29,6 +29,8 @@ class Category:
     meta_table: str | None = None
     is_liability: bool = False
     is_priced: bool = False
+    has_apr: bool = False
+    supports_backing: bool = False
 
     @classmethod
     def snapshot_ddl(cls) -> str:
