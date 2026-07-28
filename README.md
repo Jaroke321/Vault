@@ -70,7 +70,8 @@ Categories are fixed and code-defined — `cash`, `retirement`, `asset`, `debt`,
 Values are staged as pending commits and must be committed to be saved.
 
 - `update` — interactive mode: prompts for all active fields for the current month
-- `update <field> <value>` — stage a value for a single field (a dollar value for monetary categories, a quantity for Investment)
+- `update <field> <value> [-m YYYY-MM]` — stage a value for a single field (a dollar value for monetary categories, a quantity for Investment); defaults to the current month
+- `-m` / `--month` — target a specific month instead of the current one (format `YYYY-MM`, not in the future); the flag can appear anywhere among the arguments, e.g. `update checking 5000 -m 2026-03` or `update -m 2026-03 checking 5000`
 
 #### Committing Values
 
