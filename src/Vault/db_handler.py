@@ -501,6 +501,26 @@ class DBHandler:
         results.sort(key=lambda r: (r[1], r[0]))
         return results
 
+    def get_apr(self, field_id: int) -> float | None:
+        """Return the active debt record's APR, or None if absent or not applicable."""
+        with sqlite3.connect(self.db_path) as conn:
+            source_row = conn.execute(
+                "SELECT category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (field_id,),
+            ).fetchone()
+            if source_row is None:
+                return None
+            category_cls = CATEGORIES[source_row[0]]
+            if not category_cls.has_apr or category_cls.meta_table is None:
+                return None
+            row = conn.execute(
+                f"SELECT apr FROM {category_cls.meta_table} WHERE field_id = ?",
+                (field_id,),
+            ).fetchone()
+            if row is None or row[0] is None:
+                return None
+            return float(row[0])
+
     def get_backing_info(self, field_id: int) -> tuple[str, str, float, int] | None:
         """For a record whose category declares supports_backing, resolve its backing
         link (if any) to the backed record's name, category, latest recorded amount,
