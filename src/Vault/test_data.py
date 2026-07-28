@@ -14,7 +14,14 @@ def seed_test_db(db) -> None:
 
     # --- Debt attributes: mortgage backed by the house, with an interest rate ---
     db.set_apr("mortgage", 6.25)
+    db.set_apr("car_loan", 4.9)
     db.set_backing("mortgage", "house")
+
+    # --- Notes (exercise * marker across categories in summary/show) ---
+    db.set_note("checking", "Primary checking account")
+    db.set_note("house", "Primary residence")
+    db.set_note("mortgage", "30-year fixed")
+    db.set_note("gold", "Physical bullion in safe deposit box")
 
     # --- Investment symbols + unit derivation (gold/silver in troy oz, aapl in shares) ---
     db.set_investment_symbol("gold", "gold")

@@ -62,7 +62,9 @@ class ShowCommand(BaseCommand):
             print(f"No history found for field '{field_name}'.")
             return
         unit = self.db.get_field_unit(field_name)
-        self._print_field_trend(field_name, rows, unit)
+        note = self.db.get_note(field_name)
+        apr = self.db.get_field_apr(field_name)
+        self._print_field_trend(field_name, rows, unit, note, apr)
 
     def _show_category_trend(self, cat_name: str, num_months: int = DEFAULT_MONTHS):
         field_list = self.db.get_fields_by_category(category_name=cat_name)
@@ -75,6 +77,8 @@ class ShowCommand(BaseCommand):
     def _print_table(self, month_list, active_fields, data):
         COL_W = 14
         NAME_W = 22
+        notes = self.db.get_notes()
+        any_noted = False
 
         header = f"\n  {'Field':<{NAME_W}}"
         for month in month_list:
@@ -87,16 +91,33 @@ class ShowCommand(BaseCommand):
             if category_name != current_cat:
                 print(f"\n  {self.cat_label(category_name)}")
                 current_cat = category_name
-            row = f"  {field_name:<{NAME_W}}"
+            has_note = field_name in notes
+            if has_note:
+                any_noted = True
+            label = self.note_label(field_name, has_note)
+            row = f"  {label:<{NAME_W}}"
             for month in month_list:
                 val = data.get(field_name, {}).get(month)
                 cell = self.format_value(val, unit) if val is not None else "--"
                 row += f"  {cell:>{COL_W}}"
             print(row)
+        if any_noted:
+            print(f"  {self.NOTE_LEGEND}")
         print()
 
-    def _print_field_trend(self, field_name, rows, unit: str = "$"):
+    def _print_field_trend(
+        self,
+        field_name,
+        rows,
+        unit: str = "$",
+        note: str | None = None,
+        apr: float | None = None,
+    ):
         print(f"\n  Trend for '{field_name}':")
+        if note is not None:
+            print(f"  Note: {note}")
+        if apr is not None:
+            print(f"  APR: {apr:.2f}%")
 
         values = [value for _, value in rows]
         color = self.GREEN if values[-1] >= values[0] else self.RED

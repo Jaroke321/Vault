@@ -2,9 +2,10 @@ from abc import ABC, abstractmethod
 import datetime
 import re
 from ..helper import (
-    cat_label, format_value, print_banner, sparkline,
+    cat_label, format_value, note_label, print_banner, sparkline,
     BOLD, RESET,
     BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE,
+    NOTE_LEGEND,
 )
 
 class BaseCommand(ABC):
@@ -12,6 +13,7 @@ class BaseCommand(ABC):
     # Helper functions — available to all subclasses via self.<name>(...)
     cat_label    = staticmethod(cat_label)
     format_value = staticmethod(format_value)
+    note_label   = staticmethod(note_label)
     print_banner = staticmethod(print_banner)
     sparkline    = staticmethod(sparkline)
 
@@ -19,6 +21,7 @@ class BaseCommand(ABC):
     BOLD, RESET  = BOLD, RESET
     BLACK, RED, GREEN, YELLOW = BLACK, RED, GREEN, YELLOW
     BLUE, MAGENTA, CYAN, WHITE = BLUE, MAGENTA, CYAN, WHITE
+    NOTE_LEGEND = NOTE_LEGEND
 
     # Whether this command mutates the shared pending-commits list. CLI uses this to
     # decide whether the commits table should reprint after the command runs.

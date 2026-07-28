@@ -150,6 +150,40 @@ class DBHandler:
             conn.commit()
             return cursor.rowcount == 1
 
+    def get_notes(self) -> dict[str, str]:
+        """Return {field_name: note} for every active record with a non-empty note."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT name, note FROM fields
+                   WHERE deactivated_at IS NULL
+                     AND note IS NOT NULL
+                     AND note != ''"""
+            ).fetchall()
+        return {name: note for name, note in rows}
+
+    def get_note(self, name: str) -> str | None:
+        """Return the active record's note, or None if absent or empty."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT note FROM fields
+                   WHERE name = ? AND deactivated_at IS NULL""",
+                (name.lower(),),
+            ).fetchone()
+        if row is None or row[0] is None or row[0] == "":
+            return None
+        return row[0]
+
+    def get_field_apr(self, name: str) -> float | None:
+        """Return the active record's APR when its category supports it, or None."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),),
+            ).fetchone()
+        if row is None:
+            return None
+        return self.get_apr(row[0])
+
     def set_status(self, name: str, status: str) -> bool:
         """Relabel an active record's lifecycle status directly, independent of
         closing it (e.g. correcting a status set via `field remove`). Rejects
@@ -500,6 +534,26 @@ class DBHandler:
                     results.append((name, category, unit, amount, field_id))
         results.sort(key=lambda r: (r[1], r[0]))
         return results
+
+    def get_apr(self, field_id: int) -> float | None:
+        """Return the active debt record's APR, or None if absent or not applicable."""
+        with sqlite3.connect(self.db_path) as conn:
+            source_row = conn.execute(
+                "SELECT category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (field_id,),
+            ).fetchone()
+            if source_row is None:
+                return None
+            category_cls = CATEGORIES[source_row[0]]
+            if not category_cls.has_apr or category_cls.meta_table is None:
+                return None
+            row = conn.execute(
+                f"SELECT apr FROM {category_cls.meta_table} WHERE field_id = ?",
+                (field_id,),
+            ).fetchone()
+            if row is None or row[0] is None:
+                return None
+            return float(row[0])
 
     def get_backing_info(self, field_id: int) -> tuple[str, str, float, int] | None:
         """For a record whose category declares supports_backing, resolve its backing
