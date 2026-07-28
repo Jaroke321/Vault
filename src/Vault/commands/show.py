@@ -63,7 +63,8 @@ class ShowCommand(BaseCommand):
             return
         unit = self.db.get_field_unit(field_name)
         note = self.db.get_note(field_name)
-        self._print_field_trend(field_name, rows, unit, note)
+        apr = self.db.get_field_apr(field_name)
+        self._print_field_trend(field_name, rows, unit, note, apr)
 
     def _show_category_trend(self, cat_name: str, num_months: int = DEFAULT_MONTHS):
         field_list = self.db.get_fields_by_category(category_name=cat_name)
@@ -104,10 +105,19 @@ class ShowCommand(BaseCommand):
             print(f"  {self.NOTE_LEGEND}")
         print()
 
-    def _print_field_trend(self, field_name, rows, unit: str = "$", note: str | None = None):
+    def _print_field_trend(
+        self,
+        field_name,
+        rows,
+        unit: str = "$",
+        note: str | None = None,
+        apr: float | None = None,
+    ):
         print(f"\n  Trend for '{field_name}':")
         if note is not None:
             print(f"  Note: {note}")
+        if apr is not None:
+            print(f"  APR: {apr:.2f}%")
 
         values = [value for _, value in rows]
         color = self.GREEN if values[-1] >= values[0] else self.RED

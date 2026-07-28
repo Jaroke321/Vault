@@ -64,9 +64,7 @@ class CLI:
         self.commands = self.command_classes
 
     def run(self):
-        print_banner()
-        if self.test_mode:
-            print(f"{BOLD}{YELLOW}  *** TEST MODE — in-memory database, no changes will be saved ***{RESET}\n")
+        print_banner(test_mode=self.test_mode)
         history_path = None if self.test_mode else "logs/.vault_history"
         prompt = Prompt(
             project_name=self.project_name,

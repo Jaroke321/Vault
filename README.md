@@ -92,8 +92,9 @@ Fields with a note show a trailing `*` in `summary` and `show` table output, wit
 
 - `show` — table of the last 6 months across all fields
 - `show <n>` — table of the last N months
-- `show <field>` — month-over-month trend for a single field; prints the field's full note when one is set
-- `show <field> <n>` — trend for a single field over the last N months
+- `show <field>` — month-over-month trend for a single field; prints the field's full note and APR (when set)
+- `show <field> <n>` — trend for a single field over the last N months; same note/APR header as `show <field>`
+- `show <category>` — trend for each active field in that category (note and APR shown per field when set)
 - `diff <m1> <y1> <m2> <y2>` — compare all fields between two months (e.g. `diff 1 26 3 26` → January 2026 vs. March 2026)
 - `diff <field> <m1> <y1> <m2> <y2>` — compare one field between two months
 - Months are given as `<month> <year>` pairs; two-digit years mean 20xx (`26` → 2026)

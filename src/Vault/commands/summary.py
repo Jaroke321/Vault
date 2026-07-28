@@ -9,6 +9,14 @@ class SummaryCommand(BaseCommand):
   summary                       Net worth snapshot (assets minus debts)
 """
 
+    ROW_INDENT = "    "
+    TOTAL_INDENT = "  "
+    NAME_W = 22
+    VALUE_W = 18
+    SUB_LABEL_W = 18
+    QTY_W = 18
+    USD_W = 14
+
     def entry_point(self, options: list):
         """Function call that prompt will made when user enters in the call_str. This function is responsible for
         directing input to the correct sub commands of this class."""
@@ -46,22 +54,23 @@ class SummaryCommand(BaseCommand):
                 if price is not None:
                     usd_equiv = category_cls.usd_value(amount, price)
                     assets += usd_equiv
-                    print(
-                        f"    {label:<20} {self.format_value(amount, unit):>10} "
-                        f"~ {self.format_value(usd_equiv, '$'):>12} "
-                        f"(@{self.format_value(price, '$')}/{unit})"
+                    self._print_investment_row(
+                        label, amount, unit, usd_equiv, price,
                     )
                 else:
-                    print(f"    {label:<20} {self.format_value(amount, unit):>10} (no price)")
+                    self._print_main_row(
+                        label, self.format_value(amount, unit), "(no price)"
+                    )
 
             else:
                 assets += amount
-                print(f"    {label:<20} {self.format_value(amount, unit):>16}")
+                self._print_main_row(label, self.format_value(amount, unit))
 
         net = assets - liabilities
-        print(f"\n  {'Assets:':<20} ${assets:>12,.2f}")
-        print(f"  {'Liabilities:':<20} ${liabilities:>12,.2f}")
-        print(f"  {'Net Worth:':<20} ${net:>12,.2f}")
+        total_label_w = len(self.ROW_INDENT) + self.NAME_W - len(self.TOTAL_INDENT)
+        print(f"\n{self.TOTAL_INDENT}{'Assets:':<{total_label_w}}{self.format_value(assets, '$'):>{self.VALUE_W}}")
+        print(f"{self.TOTAL_INDENT}{'Liabilities:':<{total_label_w}}{self.format_value(liabilities, '$'):>{self.VALUE_W}}")
+        print(f"{self.TOTAL_INDENT}{'Net Worth:':<{total_label_w}}{self.format_value(net, '$'):>{self.VALUE_W}}")
         if any_noted:
             print(f"  {self.NOTE_LEGEND}")
         print()
@@ -70,15 +79,51 @@ class SummaryCommand(BaseCommand):
     ####################################
     # Rendering
     ####################################
+    def _print_main_row(self, label: str, value: str, tag: str = "") -> None:
+        tag_part = f"  {tag}" if tag else ""
+        print(
+            f"{self.ROW_INDENT}{label:<{self.NAME_W}}"
+            f"{value:>{self.VALUE_W}}{tag_part}"
+        )
+
+    def _print_sub_row(self, sub_label: str, value: str | None = None) -> None:
+        if value is None:
+            print(
+                f"{self.ROW_INDENT}{'':<{self.NAME_W}}"
+                f"{sub_label}"
+            )
+        else:
+            print(
+                f"{self.ROW_INDENT}{'':<{self.NAME_W}}"
+                f"{sub_label:<{self.SUB_LABEL_W}}{value:>{self.VALUE_W}}"
+            )
+
+    def _print_investment_row(
+        self,
+        label: str,
+        amount: float,
+        unit: str,
+        usd_equiv: float,
+        price: float,
+    ) -> None:
+        qty = self.format_value(amount, unit)
+        usd = self.format_value(usd_equiv, "$")
+        rate = f"(@{self.format_value(price, '$')}/{unit})"
+        print(
+            f"{self.ROW_INDENT}{label:<{self.NAME_W}}"
+            f"{qty:>{self.QTY_W}}  ~ {usd:>{self.USD_W}}  {rate}"
+        )
+
     def _print_debt_row(self, field_name: str, unit: str, amount: float, field_id: int):
         """Print a Debt row — plain liability line, or the display-only
         balance/backing-value/equity trio when linked to a backing record.
         The link never affects assets/liabilities totals: the backing record's own
         value is already counted (or excluded, if unpriced) via its own row above."""
         apr = self.db.get_apr(field_id)
+        value = self.format_value(amount, unit)
         backing = self.db.get_backing_info(field_id)
         if backing is None:
-            print(f"    {field_name:<20} {self.format_value(amount, unit):>16}  (liability)")
+            self._print_main_row(field_name, value, "(liability)")
             self._print_apr_line(apr)
             return
 
@@ -92,16 +137,16 @@ class SummaryCommand(BaseCommand):
             backing_usd = backing_cls.usd_value(backing_amount)
 
         if backing_usd is None:
-            print(f"    {field_name:<20} {self.format_value(amount, unit):>16}  (liability, backing price unavailable)")
+            self._print_main_row(field_name, value, "(liability, backing price unavailable)")
             self._print_apr_line(apr)
             return
 
         equity = backing_usd - amount
-        print(f"    {field_name:<20} balance:  {self.format_value(amount, unit):>16}  (liability)")
+        self._print_main_row(field_name, value, "(liability)")
         self._print_apr_line(apr)
-        print(f"    {'':<20} backed by '{backing_name}': {self.format_value(backing_usd, '$'):>16}")
-        print(f"    {'':<20} equity:   {self.format_value(equity, '$'):>16}")
+        self._print_sub_row(f"backed by {backing_name}", self.format_value(backing_usd, "$"))
+        self._print_sub_row("equity", self.format_value(equity, "$"))
 
     def _print_apr_line(self, apr: float | None) -> None:
         if apr is not None:
-            print(f"    {'':<20} APR: {apr:.2f}%")
+            self._print_sub_row(f"APR: {apr:.2f}%")

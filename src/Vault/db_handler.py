@@ -173,6 +173,17 @@ class DBHandler:
             return None
         return row[0]
 
+    def get_field_apr(self, name: str) -> float | None:
+        """Return the active record's APR when its category supports it, or None."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),),
+            ).fetchone()
+        if row is None:
+            return None
+        return self.get_apr(row[0])
+
     def set_status(self, name: str, status: str) -> bool:
         """Relabel an active record's lifecycle status directly, independent of
         closing it (e.g. correcting a status set via `field remove`). Rejects
