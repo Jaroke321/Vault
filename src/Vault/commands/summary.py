@@ -21,11 +21,17 @@ class SummaryCommand(BaseCommand):
         assets = 0.0
         liabilities = 0.0
         current_cat = None
+        notes = self.db.get_notes()
+        any_noted = False
 
         print("\n  === Net Worth Summary ===")
 
         for field_name, category_name, unit, amount, field_id in rows:
             category_cls = CATEGORIES[category_name]
+            has_note = field_name in notes
+            if has_note:
+                any_noted = True
+            label = self.note_label(field_name, has_note)
 
             if category_name != current_cat:
                 print(f"\n  {self.cat_label(category_name)}")
@@ -33,7 +39,7 @@ class SummaryCommand(BaseCommand):
 
             if category_cls.is_liability:
                 liabilities += amount
-                self._print_debt_row(field_name, unit, amount, field_id)
+                self._print_debt_row(label, unit, amount, field_id)
 
             elif category_cls.is_priced:
                 price = self._investment_price(field_id)
@@ -41,21 +47,23 @@ class SummaryCommand(BaseCommand):
                     usd_equiv = category_cls.usd_value(amount, price)
                     assets += usd_equiv
                     print(
-                        f"    {field_name:<20} {self.format_value(amount, unit):>10} "
+                        f"    {label:<20} {self.format_value(amount, unit):>10} "
                         f"~ {self.format_value(usd_equiv, '$'):>12} "
                         f"(@{self.format_value(price, '$')}/{unit})"
                     )
                 else:
-                    print(f"    {field_name:<20} {self.format_value(amount, unit):>10} (no price)")
+                    print(f"    {label:<20} {self.format_value(amount, unit):>10} (no price)")
 
             else:
                 assets += amount
-                print(f"    {field_name:<20} {self.format_value(amount, unit):>16}")
+                print(f"    {label:<20} {self.format_value(amount, unit):>16}")
 
         net = assets - liabilities
         print(f"\n  {'Assets:':<20} ${assets:>12,.2f}")
         print(f"  {'Liabilities:':<20} ${liabilities:>12,.2f}")
         print(f"  {'Net Worth:':<20} ${net:>12,.2f}")
+        if any_noted:
+            print(f"  {self.NOTE_LEGEND}")
         print()
         self.logger.log(f"Summary viewed: assets={assets:.2f}, liabilities={liabilities:.2f}, net={net:.2f}")
 
