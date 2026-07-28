@@ -150,6 +150,29 @@ class DBHandler:
             conn.commit()
             return cursor.rowcount == 1
 
+    def get_notes(self) -> dict[str, str]:
+        """Return {field_name: note} for every active record with a non-empty note."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT name, note FROM fields
+                   WHERE deactivated_at IS NULL
+                     AND note IS NOT NULL
+                     AND note != ''"""
+            ).fetchall()
+        return {name: note for name, note in rows}
+
+    def get_note(self, name: str) -> str | None:
+        """Return the active record's note, or None if absent or empty."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT note FROM fields
+                   WHERE name = ? AND deactivated_at IS NULL""",
+                (name.lower(),),
+            ).fetchone()
+        if row is None or row[0] is None or row[0] == "":
+            return None
+        return row[0]
+
     def set_status(self, name: str, status: str) -> bool:
         """Relabel an active record's lifecycle status directly, independent of
         closing it (e.g. correcting a status set via `field remove`). Rejects
