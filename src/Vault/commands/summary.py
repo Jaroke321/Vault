@@ -67,9 +67,11 @@ class SummaryCommand(BaseCommand):
         balance/backing-value/equity trio when linked to a backing record.
         The link never affects assets/liabilities totals: the backing record's own
         value is already counted (or excluded, if unpriced) via its own row above."""
+        apr = self.db.get_apr(field_id)
         backing = self.db.get_backing_info(field_id)
         if backing is None:
             print(f"    {field_name:<20} {self.format_value(amount, unit):>16}  (liability)")
+            self._print_apr_line(apr)
             return
 
         backing_name, backing_category, backing_amount, backing_id = backing
@@ -83,9 +85,15 @@ class SummaryCommand(BaseCommand):
 
         if backing_usd is None:
             print(f"    {field_name:<20} {self.format_value(amount, unit):>16}  (liability, backing price unavailable)")
+            self._print_apr_line(apr)
             return
 
         equity = backing_usd - amount
         print(f"    {field_name:<20} balance:  {self.format_value(amount, unit):>16}  (liability)")
+        self._print_apr_line(apr)
         print(f"    {'':<20} backed by '{backing_name}': {self.format_value(backing_usd, '$'):>16}")
         print(f"    {'':<20} equity:   {self.format_value(equity, '$'):>16}")
+
+    def _print_apr_line(self, apr: float | None) -> None:
+        if apr is not None:
+            print(f"    {'':<20} APR: {apr:.2f}%")
