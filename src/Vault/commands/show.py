@@ -75,6 +75,8 @@ class ShowCommand(BaseCommand):
     def _print_table(self, month_list, active_fields, data):
         COL_W = 14
         NAME_W = 22
+        notes = self.db.get_notes()
+        any_noted = False
 
         header = f"\n  {'Field':<{NAME_W}}"
         for month in month_list:
@@ -87,12 +89,18 @@ class ShowCommand(BaseCommand):
             if category_name != current_cat:
                 print(f"\n  {self.cat_label(category_name)}")
                 current_cat = category_name
-            row = f"  {field_name:<{NAME_W}}"
+            has_note = field_name in notes
+            if has_note:
+                any_noted = True
+            label = self.note_label(field_name, has_note)
+            row = f"  {label:<{NAME_W}}"
             for month in month_list:
                 val = data.get(field_name, {}).get(month)
                 cell = self.format_value(val, unit) if val is not None else "--"
                 row += f"  {cell:>{COL_W}}"
             print(row)
+        if any_noted:
+            print(f"  {self.NOTE_LEGEND}")
         print()
 
     def _print_field_trend(self, field_name, rows, unit: str = "$"):
