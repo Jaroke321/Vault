@@ -62,7 +62,8 @@ class ShowCommand(BaseCommand):
             print(f"No history found for field '{field_name}'.")
             return
         unit = self.db.get_field_unit(field_name)
-        self._print_field_trend(field_name, rows, unit)
+        note = self.db.get_note(field_name)
+        self._print_field_trend(field_name, rows, unit, note)
 
     def _show_category_trend(self, cat_name: str, num_months: int = DEFAULT_MONTHS):
         field_list = self.db.get_fields_by_category(category_name=cat_name)
@@ -103,8 +104,10 @@ class ShowCommand(BaseCommand):
             print(f"  {self.NOTE_LEGEND}")
         print()
 
-    def _print_field_trend(self, field_name, rows, unit: str = "$"):
+    def _print_field_trend(self, field_name, rows, unit: str = "$", note: str | None = None):
         print(f"\n  Trend for '{field_name}':")
+        if note is not None:
+            print(f"  Note: {note}")
 
         values = [value for _, value in rows]
         color = self.GREEN if values[-1] >= values[0] else self.RED
