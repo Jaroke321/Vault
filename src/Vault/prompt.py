@@ -26,28 +26,34 @@ if PromptSession is not None:
             text_before = document.text_before_cursor
             tokens_before = text_before.split()
 
-            # Assumes exactly one level of subcommands: a token-count heuristic against
-            # a flat dict[str, list[str]]. A command with a second level of subcommands
-            # won't error here — it'll silently complete against the wrong list. A
-            # token-path lookup would be needed to support deeper nesting.
-            if not tokens_before or (
-                len(tokens_before) <= 1 and not text_before.endswith(" ")
-            ):
-                for name in sorted(
-                    n for n in self._prompt.cmd_dict if n.startswith(word)
-                ):
-                    usage = self._prompt.command_usage.get(name, "")
-                    meta = usage.split("\n")[0] if usage else None
-                    yield Completion(
-                        name, start_position=-len(word), display_meta=meta
-                    )
+            # The word being completed is never itself "typed" yet, so only the
+            # tokens before it need to fully match a route.
+            if not tokens_before or text_before.endswith(" "):
+                complete_tokens = tokens_before
             else:
-                cmd = tokens_before[0]
-                subcommands = self._prompt.subcommands.get(cmd, [])
-                for name in sorted(
-                    n for n in subcommands if n.startswith(word)
-                ):
-                    yield Completion(name, start_position=-len(word))
+                complete_tokens = tokens_before[:-1]
+
+            children = self._reached_children(self._prompt.routes, complete_tokens)
+            if children is None:
+                return
+
+            for name in sorted(n for n in children if n.startswith(word)):
+                usage = children[name].usage or ""
+                meta = usage.split("\n")[0] if usage else None
+                yield Completion(name, start_position=-len(word), display_meta=meta)
+
+        @staticmethod
+        def _reached_children(routes, tokens):
+            """Walk `tokens` through `routes`, requiring each to match a child
+            exactly. Returns the children dict at the end, or None if any token
+            doesn't match (e.g. a runtime value like a field name)."""
+
+            children = routes
+            for tok in tokens:
+                if tok not in children:
+                    return None
+                children = children[tok].children
+            return children
 
 
 class Prompt:
