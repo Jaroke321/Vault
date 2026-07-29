@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+from .routing import Route
+
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.completion import CompleteStyle, Completer, Completion
@@ -58,14 +60,12 @@ class Prompt:
     piped-stdin test flow — verify them manually (see README).
     """
 
-    def __init__(self, project_name, logger, cmd_dict, subcommands, command_usage,
+    def __init__(self, project_name, logger, routes,
                  history_path=None, state_data_viewer=None):
 
         self.project_name = project_name
         self.logger = logger
-        self.cmd_dict = cmd_dict
-        self.subcommands = subcommands
-        self.command_usage = command_usage
+        self.routes = routes
         self.history_path = history_path
         self.state_data_viewer = state_data_viewer
         self._prompt_str = f"{project_name}/>"
@@ -142,9 +142,9 @@ class Prompt:
 
         cmdlets = command.split(" ")
 
-        cmd_actual = self.cmd_dict.get(cmdlets[0])
-        if cmd_actual is not None:
-            return cmd_actual, cmdlets[1:]
+        route, remaining = Route.walk(self.routes, cmdlets)
+        if route is not None:
+            return route.handler, remaining
 
         print(f"Unknown command '{cmdlets[0]}'. Type 'help' to see available commands.")
         return None, None
