@@ -45,16 +45,17 @@ if PromptSession is not None:
 
         @staticmethod
         def _reached_children(routes, tokens):
-            """Walk `tokens` through `routes`, requiring each to match a child
-            exactly. Returns the children dict at the end, or None if any token
+            """Walk `tokens` through `routes` via `Route.walk`, requiring a full
+            match. Returns the reached node's children, or None if any token
             doesn't match (e.g. a runtime value like a field name)."""
 
-            children = routes
-            for tok in tokens:
-                if tok not in children:
-                    return None
-                children = children[tok].children
-            return children
+            if not tokens:
+                return routes
+
+            route, remaining = Route.walk(routes, tokens)
+            if route is None or remaining:
+                return None
+            return route.children
 
 
 class Prompt:

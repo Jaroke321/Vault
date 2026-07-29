@@ -102,7 +102,7 @@ class CLI:
 
         children = {}
         for name, handler in sub_commands.items():
-            grandchild_names = getattr(handler, "subroutes", None) or {}
+            grandchild_names = getattr(handler, "subroutes", {})
             grandchildren = {
                 child_name: getattr(instance, method_name)
                 for child_name, method_name in grandchild_names.items()
