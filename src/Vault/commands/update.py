@@ -28,7 +28,7 @@ class UpdateCommand(BaseCommand):
         if not options:
            self.usage()
         elif len(options) == 2:
-           self.sub_single_update(options, target_month)
+           self._single_update(options, target_month)
         else:
            self.usage()
 
@@ -62,7 +62,7 @@ class UpdateCommand(BaseCommand):
     ####################################
     # Sub-commands
     ####################################
-    def sub_single_update(self, options, target_month):
+    def _single_update(self, options, target_month):
         field_name, raw = options[0], options[1]
         success = False
 
