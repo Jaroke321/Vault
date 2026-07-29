@@ -6,6 +6,7 @@ from rich.progress import track
 
 # Extra imports of useful things
 from .prompt import Prompt
+from .routing import Route
 from .logger import Logger
 from .db_handler import DBHandler
 from .price_fetcher import PriceFetcher
@@ -53,15 +54,10 @@ class CLI:
         self.test_mode = test_mode
         self.project_name = "[TEST] Vault" if test_mode else "Vault"
         self.pending_commits = PendingCommits()
-        self.subcommands = {}
-        self.command_usage = {}
 
         # Need to init classes before using
         command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, DiffCommand, HelpCommand, InvestmentCommand, ExportCommand, ImportCommand, ExitCommand]
-        self.command_classes = self.load_command_classes(command_class_list)
-
-        # add command class entry points to the commands list
-        self.commands = self.command_classes
+        self.load_command_classes(command_class_list)
 
     def run(self):
         print_banner(test_mode=self.test_mode)
@@ -70,9 +66,7 @@ class CLI:
             project_name=self.project_name,
             logger=self.logger,
             state_data_viewer=self.pending_commits.render,
-            cmd_dict=self.commands,
-            subcommands=self.subcommands,
-            command_usage=self.command_usage,
+            routes=self.routes,
             history_path=history_path,
         )
         prompt.render()
@@ -81,29 +75,43 @@ class CLI:
     # Commands
     # ------------------------------------------------------------------
 
-    def load_command_classes(self, command_class_list: list) -> dict:
+    def load_command_classes(self, command_class_list: list) -> None:
 
-        commands = {}            # Maps command name to entry point
-        owners = {}              # Maps command name to command class name, used for error checking
-        self.subcommands = {}    # Maps command name to list of subcommand names
-        self.command_usage = {}  # Maps command name to usage text
+        owners = {}       # Maps command name to command class name, used for error checking
+        self.routes = {}  # Maps top-level command name to Route
 
         for cls in command_class_list:
             instance = cls(self.db, self.logger, self.price_fetcher, self.pending_commits)
             usage = instance.usage_text()
-            subcommand_names = list(instance.sub_commands.keys()) if instance.sub_commands else None
+            route_children = self._build_route_children(instance, instance.sub_commands)
             for name, entry_point in instance.init_command().items():
-                if name in commands:
+                if name in self.routes:
                     raise ValueError(
                         f"Alias '{name}' is claimed by both {owners[name]} and {cls.__name__}."
                     )
-                commands[name] = self._wrap_entry_point(entry_point, instance)
                 owners[name] = cls.__name__
-                if subcommand_names:
-                    self.subcommands[name] = subcommand_names
-                self.command_usage[name] = usage
+                self.routes[name] = Route(
+                    handler=self._wrap_entry_point(entry_point, instance),
+                    usage=usage,
+                    children=route_children,
+                )
 
-        return commands
+    def _build_route_children(self, instance, sub_commands: dict) -> dict:
+        """Recursively fold `sub_commands` (name -> bound method) into `dict[str, Route]`,
+        following any `subroute`-tagged children to build depth beyond one level."""
+
+        children = {}
+        for name, handler in sub_commands.items():
+            grandchild_names = getattr(handler, "subroutes", {})
+            grandchildren = {
+                child_name: getattr(instance, method_name)
+                for child_name, method_name in grandchild_names.items()
+            }
+            children[name] = Route(
+                handler=self._wrap_entry_point(handler, instance),
+                children=self._build_route_children(instance, grandchildren),
+            )
+        return children
 
     def _wrap_entry_point(self, entry_point, instance):
         """Wrap a command class's entry point so the pending-commits table stays in sync

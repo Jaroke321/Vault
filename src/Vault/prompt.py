@@ -1,10 +1,13 @@
 import sys
 from pathlib import Path
 
+from .routing import Route
+
 try:
     from prompt_toolkit import PromptSession
-    from prompt_toolkit.completion import CompleteStyle, Completer, Completion
+    from prompt_toolkit.completion import Completer, Completion
     from prompt_toolkit.history import FileHistory, InMemoryHistory
+    from prompt_toolkit.shortcuts import CompleteStyle
 except ImportError:
     PromptSession = None
 
@@ -24,28 +27,35 @@ if PromptSession is not None:
             text_before = document.text_before_cursor
             tokens_before = text_before.split()
 
-            # Assumes exactly one level of subcommands: a token-count heuristic against
-            # a flat dict[str, list[str]]. A command with a second level of subcommands
-            # won't error here — it'll silently complete against the wrong list. A
-            # token-path lookup would be needed to support deeper nesting.
-            if not tokens_before or (
-                len(tokens_before) <= 1 and not text_before.endswith(" ")
-            ):
-                for name in sorted(
-                    n for n in self._prompt.cmd_dict if n.startswith(word)
-                ):
-                    usage = self._prompt.command_usage.get(name, "")
-                    meta = usage.split("\n")[0] if usage else None
-                    yield Completion(
-                        name, start_position=-len(word), display_meta=meta
-                    )
+            # The word being completed is never itself "typed" yet, so only the
+            # tokens before it need to fully match a route.
+            if not tokens_before or text_before.endswith(" "):
+                complete_tokens = tokens_before
             else:
-                cmd = tokens_before[0]
-                subcommands = self._prompt.subcommands.get(cmd, [])
-                for name in sorted(
-                    n for n in subcommands if n.startswith(word)
-                ):
-                    yield Completion(name, start_position=-len(word))
+                complete_tokens = tokens_before[:-1]
+
+            children = self._reached_children(self._prompt.routes, complete_tokens)
+            if children is None:
+                return
+
+            for name in sorted(n for n in children if n.startswith(word)):
+                usage = children[name].usage or ""
+                meta = usage.split("\n")[0] if usage else None
+                yield Completion(name, start_position=-len(word), display_meta=meta)
+
+        @staticmethod
+        def _reached_children(routes, tokens):
+            """Walk `tokens` through `routes` via `Route.walk`, requiring a full
+            match. Returns the reached node's children, or None if any token
+            doesn't match (e.g. a runtime value like a field name)."""
+
+            if not tokens:
+                return routes
+
+            route, remaining = Route.walk(routes, tokens)
+            if route is None or remaining:
+                return None
+            return route.children
 
 
 class Prompt:
@@ -58,14 +68,12 @@ class Prompt:
     piped-stdin test flow — verify them manually (see README).
     """
 
-    def __init__(self, project_name, logger, cmd_dict, subcommands, command_usage,
+    def __init__(self, project_name, logger, routes,
                  history_path=None, state_data_viewer=None):
 
         self.project_name = project_name
         self.logger = logger
-        self.cmd_dict = cmd_dict
-        self.subcommands = subcommands
-        self.command_usage = command_usage
+        self.routes = routes
         self.history_path = history_path
         self.state_data_viewer = state_data_viewer
         self._prompt_str = f"{project_name}/>"
@@ -142,9 +150,9 @@ class Prompt:
 
         cmdlets = command.split(" ")
 
-        cmd_actual = self.cmd_dict.get(cmdlets[0])
-        if cmd_actual is not None:
-            return cmd_actual, cmdlets[1:]
+        route, remaining = Route.walk(self.routes, cmdlets)
+        if route is not None:
+            return route.handler, remaining
 
         print(f"Unknown command '{cmdlets[0]}'. Type 'help' to see available commands.")
         return None, None
