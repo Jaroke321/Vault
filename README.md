@@ -178,16 +178,16 @@ summary
 
 #### Tab Completion & History
 
-- `<TAB>` completes command names at the start of a line, and subcommand names once a top-level command has been typed
-- `<TAB>` on a line that already unambiguously matches one command prints that command's usage text
-- Command history persists across sessions in `logs/.vault_history` (skipped in `--test` mode)
+- `<TAB>` completes command names at the start of a line, and subcommand names once a top-level command has been typed (via a prompt_toolkit completion menu)
+- While browsing command-name completions, the first line of each command's usage text appears in the menu's metadata column; `<command> usage` still prints the full usage block
+- Command history persists across sessions in `logs/.vault_history` (skipped in `--test` mode). The history file format changed with the prompt_toolkit switch — pre-existing readline history is not carried over.
 
 This is only active in a real interactive terminal — `--test` mode pipes commands via
 stdin, so it can't exercise tab-completion or history persistence. To check manually:
 run `vault` (without `--test`), press `<TAB>` at the empty prompt to see command
-completions, type a command name and press `<TAB>` to see its usage text, type a
-top-level command followed by a space and `<TAB>` to see subcommand completions, then
-`exit` and restart `vault` to confirm prior commands are recalled with the up arrow.
+completions, type a top-level command followed by a space and `<TAB>` to see subcommand
+completions, then `exit` and restart `vault` to confirm prior commands are recalled
+with the up arrow.
 
 ## Project Structure
 
