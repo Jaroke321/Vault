@@ -1,11 +1,12 @@
 import argparse
 import datetime
+import os
+import sys
 import time
 from pathlib import Path
-from rich.progress import track
 
 # Extra imports of useful things
-from .prompt import Prompt
+from .prompt import ExitSignal, Prompt, PromptSession
 from .routing import Route
 from .logger import Logger
 from .db_handler import DBHandler
@@ -62,7 +63,13 @@ class CLI:
         self.load_command_classes(command_class_list)
 
     def run(self):
-        print_banner(test_mode=self.test_mode)
+        use_tui = (
+            PromptSession is not None
+            and sys.stdin.isatty()
+            and sys.stdout.isatty()
+            and not os.environ.get("VAULT_NO_SCREEN")
+        )
+
         history_path = None if self.test_mode else "logs/.vault_history"
         status_line = StatusLine(
             self.pending_commits,
@@ -77,6 +84,18 @@ class CLI:
             history_path=history_path,
             status_line=status_line,
         )
+
+        if use_tui:
+            from .tui import VaultApp
+            app = VaultApp(prompt)
+            try:
+                app.run()
+            except ExitSignal:
+                pass
+            print("Exiting Vault...")
+            return
+
+        print_banner(test_mode=self.test_mode)
         if prompt.interactive:
             prompt._build_session()
             for instance in self._command_instances:
