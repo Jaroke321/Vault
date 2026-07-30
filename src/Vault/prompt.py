@@ -249,5 +249,6 @@ class Prompt:
         if route is not None:
             return route.handler, remaining
 
-        print(f"Unknown command '{cmdlets[0]}'. Type 'help' to see available commands.")
+        if not self.interactive:
+            print(f"Unknown command '{cmdlets[0]}'. Type 'help' to see available commands.")
         return None, None
