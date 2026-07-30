@@ -1,4 +1,5 @@
 import random
+import re
 
 # ANSI color codes
 BOLD     = "\033[1m"
@@ -15,6 +16,48 @@ WHITE    = "\033[37m"
 
 NOTE_MARKER = "*"
 NOTE_LEGEND = "* = has note"
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+def strip_ansi(s: str) -> str:
+    return _ANSI_RE.sub("", s)
+
+def visible_len(s: str) -> int:
+    return len(strip_ansi(s))
+
+def truncate_ansi(s: str, width: int) -> str:
+    """Clip `s` to `width` visible columns without splitting an escape sequence.
+
+    Escape sequences themselves never count against `width` and are always
+    passed through in full, even if only their trailing part would otherwise
+    fit — otherwise a partial `\\x1b[3` could leak into the terminal as text.
+    """
+    if width <= 0:
+        return ""
+
+    out = []
+    visible = 0
+    pos = 0
+    for match in _ANSI_RE.finditer(s):
+        if visible >= width:
+            break
+        chunk = s[pos:match.start()]
+        remaining = width - visible
+        if len(chunk) > remaining:
+            out.append(chunk[:remaining])
+            visible = width
+            pos = match.start()
+            break
+        out.append(chunk)
+        visible += len(chunk)
+        out.append(match.group())
+        pos = match.end()
+
+    if visible < width:
+        chunk = s[pos:]
+        out.append(chunk[:width - visible])
+
+    return "".join(out)
 
 def note_label(name: str, has_note: bool) -> str:
     return name + NOTE_MARKER if has_note else name
