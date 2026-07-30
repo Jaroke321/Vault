@@ -71,7 +71,6 @@ class CLI:
         prompt = Prompt(
             project_name=self.project_name,
             logger=self.logger,
-            state_data_viewer=self.pending_commits.render,
             routes=self.routes,
             history_path=history_path,
             status_line=status_line,

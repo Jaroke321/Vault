@@ -61,6 +61,8 @@ class CommitCommand(BaseCommand):
             self._undo_stack.append({"timestamp": datetime.datetime.now(), "entries": batch})
 
         self.commits.clear()
+        if batch:
+            self.commits.render()
 
     def _commit_subset(self, options):
         unique_options = set(options)
@@ -87,6 +89,9 @@ class CommitCommand(BaseCommand):
         # Remove from list everything we just commited
         for i in sorted(successful_commits, reverse=True):
             self.commits.pop(i)
+
+        if batch:
+            self.commits.render()
 
     def sub_list(self, options):
         self.commits.render()

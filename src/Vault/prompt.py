@@ -83,13 +83,12 @@ class Prompt:
     """
 
     def __init__(self, project_name, logger, routes,
-                 history_path=None, state_data_viewer=None, *, status_line=None):
+                 history_path=None, *, status_line=None):
 
         self.project_name = project_name
         self.logger = logger
         self.routes = routes
         self.history_path = history_path
-        self.state_data_viewer = state_data_viewer
         self.status_line = status_line
         self._prompt_str = f"{project_name}/>"
 
@@ -120,9 +119,6 @@ class Prompt:
                 # and then sub commands can return back more dicts with sub commands
                 # could potentially allow for more complex and dynamic decision trees
 
-
-            if(self.state_data_viewer):
-                self.state_data_viewer()
 
             command_input = self._read_line()
 
