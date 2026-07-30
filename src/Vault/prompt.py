@@ -200,13 +200,12 @@ def create_repl_session(prompt, *, input=None, output=None):
 
 
 class Prompt:
-    """Base class for prompt engine.
+    """Interactive Vault REPL prompt (prompt_toolkit when available).
 
-    Note: `vault --test` pipes commands via stdin, so `sys.stdin.isatty()` is
-    always False there and `self.interactive` is always False in that harness.
-    Tab-completion, completion metadata, and history persistence are only
-    reachable in a real interactive session, so they can't be exercised by the
-    piped-stdin test flow — verify them manually (see README).
+    Interactive-only features (completion, toolbar, key bindings, styled input)
+    require a TTY. Piped ``vault --test`` sets ``self.interactive`` to False and
+    falls back to plain ``input()``. Keystroke-level behavior can be checked with
+    ``python -m repl_harness`` (see README).
     """
 
     def __init__(self, project_name, logger, routes,
