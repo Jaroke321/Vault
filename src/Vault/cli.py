@@ -120,17 +120,11 @@ class CLI:
         return children
 
     def _wrap_entry_point(self, entry_point, instance):
-        """Wrap a command class's entry point so the pending-commits table stays in sync
-        with whether that command mutates the shared pending-commits list."""
-
         def wrapped(options):
             if options and options[0] == "usage":
                 instance.usage()
-                self.pending_commits.suppress_next_render()
                 return
             entry_point(options)
-            if not instance.mutates_commits:
-                self.pending_commits.suppress_next_render()
 
         return wrapped
 

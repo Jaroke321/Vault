@@ -6,7 +6,6 @@ import time
 class CommitCommand(BaseCommand):
 
     call_str = "commit" # Tells the prompt the string command in order to call this class
-    mutates_commits = True
 
     USAGE = """
   commit                        Commit all pending staged updates to the database

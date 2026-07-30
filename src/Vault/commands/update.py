@@ -4,7 +4,6 @@ import datetime
 class UpdateCommand(BaseCommand):
 
     call_str = "update" # Tells the prompt the string command in order to call this class
-    mutates_commits = True
 
     USAGE = """
   update                               Interactively stage values for all fields (default: current month)

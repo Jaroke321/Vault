@@ -54,10 +54,6 @@ class BaseCommand(ABC):
     BLUE, MAGENTA, CYAN, WHITE = BLUE, MAGENTA, CYAN, WHITE
     NOTE_LEGEND = NOTE_LEGEND
 
-    # Whether this command mutates the shared pending-commits list. CLI uses this to
-    # decide whether the commits table should reprint after the command runs.
-    mutates_commits = False
-
     # Detailed usage text printed by `<command> usage` and internal error paths.
     USAGE: str | None = None
 

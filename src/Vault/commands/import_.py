@@ -8,7 +8,6 @@ from ..data_types import CATEGORIES
 class ImportCommand(BaseCommand):
 
     call_str = "import"
-    mutates_commits = True
 
     USAGE = """
   import csv <filename>         Import a wide-format CSV back into the database

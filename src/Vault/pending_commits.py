@@ -7,7 +7,6 @@ class PendingCommits:
 
     def __init__(self):
         self._commits = []
-        self._suppress_next_render = False
 
     def __len__(self):
         return len(self._commits)
@@ -35,14 +34,8 @@ class PendingCommits:
         """Distinct months present in staged entries, sorted chronologically."""
         return sorted({entry[1] for entry in self._commits})
 
-    def suppress_next_render(self):
-        """Skip the next render() call without permanently hiding the table. Used by
-        commands that don't mutate the pending list."""
-        self._suppress_next_render = True
-
     def render(self):
-        if not self._commits or self._suppress_next_render:
-            self._suppress_next_render = False
+        if not self._commits:
             return
 
         headers = ["#", "Field", "Month", "Value"]
