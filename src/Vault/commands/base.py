@@ -1,12 +1,18 @@
 from abc import ABC, abstractmethod
 import datetime
 import re
+import sys
 from ..helper import (
     cat_label, format_value, note_label, print_banner, sparkline,
     BOLD, RESET,
     BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE,
     NOTE_LEGEND,
 )
+
+try:
+    from prompt_toolkit.shortcuts import confirm
+except ImportError:
+    confirm = None
 
 def subroute(**children: str):
     """Mark a `sub_*` method as routing one level deeper.
@@ -101,6 +107,14 @@ class BaseCommand(ABC):
     def usage(self):
         """Print this command's detailed usage text."""
         print(self.usage_text())
+
+    def _confirm(self, message: str) -> bool:
+        """Return True to proceed. Non-interactive sessions auto-confirm."""
+        if self.prompt_session is None or not sys.stdin.isatty():
+            return True
+        if confirm is None:
+            return True
+        return confirm(message)
 
     # ------------------------------------------------------------------
     # Helpers

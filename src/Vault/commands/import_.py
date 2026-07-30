@@ -71,6 +71,29 @@ class ImportCommand(BaseCommand):
         field_names = [name for name, _, _ in columns]
         existing = self.db.get_field_values(field_names)
 
+        overwrite_count = 0
+        for row in data_rows:
+            if not row:
+                continue
+            month = row[0]
+            values = row[1:]
+            for field_name, _, col_idx in columns:
+                if col_idx >= len(values):
+                    continue
+                cell = values[col_idx]
+                if cell == "":
+                    continue
+                if self._parse_float(cell) is None:
+                    continue
+                if field_name in existing and month in existing[field_name]:
+                    overwrite_count += 1
+
+        if overwrite_count and not self._confirm(
+            f"Import will stage {overwrite_count} cell(s) that overwrite existing values. Continue?"
+        ):
+            print("Import cancelled.")
+            return
+
         committed = 0
         staged = 0
         skipped_empty = 0

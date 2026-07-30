@@ -110,6 +110,10 @@ class CommitCommand(BaseCommand):
 
         pop_count = min(count, len(self._undo_stack))
 
+        if not self._confirm(f"Reverse {pop_count} commit(s)?"):
+            print("Cancelled.")
+            return
+
         for _ in range(pop_count):
             batch = self._undo_stack.pop()["entries"]
             for field_name, month, _value, prior in reversed(batch):
