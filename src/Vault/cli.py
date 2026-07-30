@@ -58,6 +58,7 @@ class CLI:
 
         # Need to init classes before using
         command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, DiffCommand, HelpCommand, InvestmentCommand, ExportCommand, ImportCommand, ExitCommand]
+        self._command_instances = []
         self.load_command_classes(command_class_list)
 
     def run(self):
@@ -76,6 +77,10 @@ class CLI:
             history_path=history_path,
             status_line=status_line,
         )
+        if prompt.interactive:
+            prompt._build_session()
+            for instance in self._command_instances:
+                instance.prompt_session = prompt._session
         prompt.render()
 
     # ------------------------------------------------------------------
@@ -89,6 +94,7 @@ class CLI:
 
         for cls in command_class_list:
             instance = cls(self.db, self.logger, self.price_fetcher, self.pending_commits)
+            self._command_instances.append(instance)
             usage = instance.usage_text()
             route_children = self._build_route_children(instance, instance.sub_commands)
             for name, entry_point in instance.init_command().items():

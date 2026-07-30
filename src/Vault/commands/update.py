@@ -1,6 +1,26 @@
 from .base import BaseCommand
 import datetime
 
+from ..data_types import CATEGORIES
+
+try:
+    from prompt_toolkit.validation import Validator, ValidationError
+except ImportError:
+    Validator = object
+    ValidationError = Exception
+
+
+class _NumericValidator(Validator):
+    def validate(self, document):
+        text = document.text.strip()
+        if not text:
+            return
+        try:
+            float(text.replace("$", "").replace(",", ""))
+        except ValueError as exc:
+            raise ValidationError(message="Enter a number or leave blank to skip") from exc
+
+
 class UpdateCommand(BaseCommand):
 
     call_str = "update" # Tells the prompt the string command in order to call this class
@@ -25,7 +45,7 @@ class UpdateCommand(BaseCommand):
         target_month = flagged_month if flagged_month is not None else current_month
 
         if not options:
-           self.usage()
+           self._interactive_update(target_month)
         elif len(options) == 2:
            self._single_update(options, target_month)
         else:
@@ -58,9 +78,61 @@ class UpdateCommand(BaseCommand):
             i += 1
         return rest, month, None
 
+    @staticmethod
+    def _previous_month(month: str) -> str:
+        year, mon = map(int, month.split("-", 1))
+        if mon == 1:
+            return f"{year - 1}-12"
+        return f"{year:04d}-{mon - 1:02d}"
+
     ####################################
     # Sub-commands
     ####################################
+    def _interactive_update(self, target_month):
+        if self.prompt_session is None:
+            self.usage()
+            return
+
+        previous_month = self._previous_month(target_month)
+        staged = []
+
+        try:
+            for field_name, category, unit in self.db.get_active_fields():
+                if CATEGORIES[category].is_priced:
+                    continue
+
+                prior = self.db.get_value(field_name, previous_month)
+                default = str(prior) if prior is not None else ""
+                message = f"{field_name} ({category}, {unit}): "
+                raw = self.prompt_session.prompt(
+                    message,
+                    default=default,
+                    placeholder=f"{category} · {unit} · blank to skip",
+                    validator=_NumericValidator(),
+                )
+
+                if not raw.strip():
+                    continue
+
+                amount = self._parse_float(raw)
+                if amount is None:
+                    continue
+
+                old = self.db.get_value(field_name, target_month)
+                if old is not None and old != amount:
+                    print(
+                        f"[WARN] Overwriting value for {field_name} {target_month}: "
+                        f"{self.format_value(old)} → {self.format_value(amount)}"
+                    )
+
+                staged.append([field_name, target_month, amount])
+        except KeyboardInterrupt:
+            print("\nUpdate cancelled.")
+            return
+
+        for entry in staged:
+            self.commits.append(entry)
+
     def _single_update(self, options, target_month):
         field_name, raw = options[0], options[1]
         success = False

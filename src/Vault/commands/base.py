@@ -57,12 +57,12 @@ class BaseCommand(ABC):
     # Detailed usage text printed by `<command> usage` and internal error paths.
     USAGE: str | None = None
 
-    def __init__(self, db, logger, price_fetcher=None, commits=None):
+    def __init__(self, db, logger, price_fetcher=None, commits=None, *, prompt_session=None):
         self.db = db
         self.logger = logger
         self.price_fetcher = price_fetcher
         self.commits = commits
-        
+        self.prompt_session = prompt_session
         self.sub_commands = {
             name.removeprefix("sub_"): getattr(self, name)
             for name in dir(self)
