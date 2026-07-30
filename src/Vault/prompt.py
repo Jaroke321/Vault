@@ -8,8 +8,10 @@ try:
     from prompt_toolkit.completion import Completer, Completion
     from prompt_toolkit.history import FileHistory, InMemoryHistory
     from prompt_toolkit.shortcuts import CompleteStyle
+    from prompt_toolkit.styles import Style
 except ImportError:
     PromptSession = None
+    Style = None
 
 
 class ExitSignal(Exception):
@@ -58,6 +60,18 @@ if PromptSession is not None:
             return route.children
 
 
+if PromptSession is not None:
+    VAULT_STYLE = Style.from_dict({
+        "status.default": "",
+        "status.staged": "bold",
+        "status.month": "ansicyan",
+        "status.prices": "ansigreen",
+        "status.test": "ansiyellow bold",
+    })
+else:
+    VAULT_STYLE = None
+
+
 class Prompt:
     """Base class for prompt engine.
 
@@ -69,13 +83,14 @@ class Prompt:
     """
 
     def __init__(self, project_name, logger, routes,
-                 history_path=None, state_data_viewer=None):
+                 history_path=None, state_data_viewer=None, *, status_line=None):
 
         self.project_name = project_name
         self.logger = logger
         self.routes = routes
         self.history_path = history_path
         self.state_data_viewer = state_data_viewer
+        self.status_line = status_line
         self._prompt_str = f"{project_name}/>"
 
         self.interactive = PromptSession is not None and sys.stdin.isatty()
@@ -139,12 +154,20 @@ class Prompt:
         else:
             history = InMemoryHistory()
 
-        self._session = PromptSession(
+        session_kwargs = dict(
             history=history,
             completer=_VaultCompleter(self),
             complete_while_typing=False,
             complete_style=CompleteStyle.MULTI_COLUMN,
         )
+        if self.status_line is not None:
+            session_kwargs["bottom_toolbar"] = self._status_line
+            session_kwargs["style"] = VAULT_STYLE
+
+        self._session = PromptSession(**session_kwargs)
+
+    def _status_line(self):
+        return self.status_line.toolbar_text()
 
     def validate_command(self, command: str):
 

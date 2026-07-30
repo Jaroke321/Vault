@@ -11,6 +11,7 @@ from .logger import Logger
 from .db_handler import DBHandler
 from .price_fetcher import PriceFetcher
 from .pending_commits import PendingCommits
+from .status import StatusLine
 from .helper import *
 
 # Command classes
@@ -62,12 +63,18 @@ class CLI:
     def run(self):
         print_banner(test_mode=self.test_mode)
         history_path = None if self.test_mode else "logs/.vault_history"
+        status_line = StatusLine(
+            self.pending_commits,
+            self.price_fetcher,
+            test_mode=self.test_mode,
+        )
         prompt = Prompt(
             project_name=self.project_name,
             logger=self.logger,
             state_data_viewer=self.pending_commits.render,
             routes=self.routes,
             history_path=history_path,
+            status_line=status_line,
         )
         prompt.render()
 
