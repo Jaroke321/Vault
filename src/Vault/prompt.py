@@ -11,10 +11,12 @@ try:
     from prompt_toolkit.shortcuts import CompleteStyle
     from prompt_toolkit.styles import Style
     from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.lexers import Lexer
 except ImportError:
     PromptSession = None
     Style = None
     FormattedText = None
+    Lexer = None
 
 
 class ExitSignal(Exception):
@@ -62,6 +64,43 @@ if PromptSession is not None:
                 return None
             return route.children
 
+    class _VaultLexer(Lexer):
+        def __init__(self, prompt):
+            self._prompt = prompt
+
+        def lex_document(self, document):
+            def get_line(lineno):
+                if lineno > 0:
+                    lines = document.text.split("\n")
+                    if lineno < len(lines):
+                        return [("", lines[lineno])]
+                    return []
+
+                text = document.text
+                if not text:
+                    return [("", "")]
+
+                index = 0
+                while index < len(text) and text[index].isspace():
+                    index += 1
+
+                end = index
+                while end < len(text) and not text[end].isspace():
+                    end += 1
+
+                first = text[index:end]
+                if not first:
+                    return [("", text)]
+
+                style = (
+                    "lexer.command.known"
+                    if first in self._prompt.routes
+                    else "lexer.command.unknown"
+                )
+                return [("", text[:index]), (style, first), ("", text[end:])]
+
+            return get_line
+
 
 if PromptSession is not None:
     VAULT_STYLE = Style.from_dict({
@@ -74,6 +113,8 @@ if PromptSession is not None:
         "prompt.test": "ansiyellow bold",
         "prompt.name": "ansicyan bold",
         "prompt.sep": "ansibrightblack",
+        "lexer.command.known": "ansigreen bold",
+        "lexer.command.unknown": "ansired",
     })
 else:
     VAULT_STYLE = None
@@ -186,6 +227,7 @@ class Prompt:
             complete_while_typing=False,
             complete_style=CompleteStyle.MULTI_COLUMN,
             style=VAULT_STYLE,
+            lexer=_VaultLexer(self),
         )
         if self.status_line is not None:
             session_kwargs["bottom_toolbar"] = self._status_line
