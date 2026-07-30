@@ -27,6 +27,14 @@ class PendingCommits:
     def clear(self):
         self._commits.clear()
 
+    @property
+    def staged_count(self):
+        return len(self._commits)
+
+    def target_months(self):
+        """Distinct months present in staged entries, sorted chronologically."""
+        return sorted({entry[1] for entry in self._commits})
+
     def suppress_next_render(self):
         """Skip the next render() call without permanently hiding the table. Used by
         commands that don't mutate the pending list."""
