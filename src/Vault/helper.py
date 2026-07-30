@@ -86,11 +86,11 @@ _BANNER_J = r"""
 
 _STARTUP_BANNERS = (
     _BANNER_H,
-    _BANNER_BLOCKY,
-    _BANNER_DOUBLE_BLOCKY,
-    _BANNER_CALVIN,
-    _BANNER_VAULT_FRAME,
-    _BANNER_J,
+    # _BANNER_BLOCKY,
+    # _BANNER_DOUBLE_BLOCKY,
+    # _BANNER_CALVIN,
+    # _BANNER_VAULT_FRAME,
+    # _BANNER_J,
 )
 
 def print_banner(test_mode: bool = False) -> None:

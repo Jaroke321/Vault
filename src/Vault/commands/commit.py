@@ -6,11 +6,11 @@ import time
 class CommitCommand(BaseCommand):
 
     call_str = "commit" # Tells the prompt the string command in order to call this class
-    mutates_commits = True
 
     USAGE = """
   commit                        Commit all pending staged updates to the database
   commit <n> [n ...]            Commit one or more pending updates by index
+  commit list                   Show pending staged updates awaiting commit
   commit undo                   Reverse the most recent commit
   commit undo <n>               Reverse the last N commits
   commit history                Show past commits, most recent first (reference for commit undo)
@@ -60,6 +60,8 @@ class CommitCommand(BaseCommand):
             self._undo_stack.append({"timestamp": datetime.datetime.now(), "entries": batch})
 
         self.commits.clear()
+        if batch:
+            self.commits.render()
 
     def _commit_subset(self, options):
         unique_options = set(options)
@@ -87,6 +89,12 @@ class CommitCommand(BaseCommand):
         for i in sorted(successful_commits, reverse=True):
             self.commits.pop(i)
 
+        if batch:
+            self.commits.render()
+
+    def sub_list(self, options):
+        self.commits.render()
+
     def sub_undo(self, options):
         count = 1
         if options:
@@ -101,6 +109,10 @@ class CommitCommand(BaseCommand):
             return
 
         pop_count = min(count, len(self._undo_stack))
+
+        if not self._confirm(f"Reverse {pop_count} commit(s)?"):
+            print("Cancelled.")
+            return
 
         for _ in range(pop_count):
             batch = self._undo_stack.pop()["entries"]

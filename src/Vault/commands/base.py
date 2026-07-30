@@ -1,12 +1,18 @@
 from abc import ABC, abstractmethod
 import datetime
 import re
+import sys
 from ..helper import (
     cat_label, format_value, note_label, print_banner, sparkline,
     BOLD, RESET,
     BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE,
     NOTE_LEGEND,
 )
+
+try:
+    from prompt_toolkit.shortcuts import confirm
+except ImportError:
+    confirm = None
 
 def subroute(**children: str):
     """Mark a `sub_*` method as routing one level deeper.
@@ -54,19 +60,15 @@ class BaseCommand(ABC):
     BLUE, MAGENTA, CYAN, WHITE = BLUE, MAGENTA, CYAN, WHITE
     NOTE_LEGEND = NOTE_LEGEND
 
-    # Whether this command mutates the shared pending-commits list. CLI uses this to
-    # decide whether the commits table should reprint after the command runs.
-    mutates_commits = False
-
     # Detailed usage text printed by `<command> usage` and internal error paths.
     USAGE: str | None = None
 
-    def __init__(self, db, logger, price_fetcher=None, commits=None):
+    def __init__(self, db, logger, price_fetcher=None, commits=None, *, prompt_session=None):
         self.db = db
         self.logger = logger
         self.price_fetcher = price_fetcher
         self.commits = commits
-        
+        self.prompt_session = prompt_session
         self.sub_commands = {
             name.removeprefix("sub_"): getattr(self, name)
             for name in dir(self)
@@ -105,6 +107,14 @@ class BaseCommand(ABC):
     def usage(self):
         """Print this command's detailed usage text."""
         print(self.usage_text())
+
+    def _confirm(self, message: str) -> bool:
+        """Return True to proceed. Non-interactive sessions auto-confirm."""
+        if self.prompt_session is None or not sys.stdin.isatty():
+            return True
+        if confirm is None:
+            return True
+        return confirm(message)
 
     # ------------------------------------------------------------------
     # Helpers

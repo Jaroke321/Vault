@@ -85,6 +85,10 @@ class FieldCommand(BaseCommand):
         name = options[0]
         reason = options[1] if len(options) > 1 else FieldStatus.CLOSED.value
 
+        if not self._confirm(f"Close field '{name}' ({reason})? History is preserved."):
+            print("Cancelled.")
+            return
+
         success = self.db.close_field(name, reason)
         if success:
             print(f"Field '{name}' closed ({reason}). History is preserved.")

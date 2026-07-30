@@ -75,11 +75,14 @@ Values are staged as pending commits and must be committed to be saved.
 
 #### Committing Values
 
-- `commit` — commit all pending updates
+- `commit` — commit all pending updates (prints any remaining staged entries afterward)
 - `commit <n> [n ...]` — commit one or more specific pending updates by index
+- `commit list` — show the pending staged table with index numbers
 - `commit undo` — reverse the most recent commit
 - `commit undo <n>` — reverse the last N commits
 - `commit history` — show past commits, most recent first, numbered to match `commit undo <n>`
+
+Staged updates are **not** reprinted after every command. The bottom toolbar shows the staged count and target month(s); use `commit list` or **F2** to review the full table before committing.
 
 Undo is a session-only, in-memory stack — it is not persisted across
 restarts. Reversing a commit restores the exact prior row (its value and
@@ -108,7 +111,7 @@ Fields with a note show a trailing `*` in `summary` and `show` table output, wit
 
 The CSV is "wide": one row per month, one column per active field, with raw numeric values (no currency formatting) so it can be used directly in a spreadsheet. The first two rows are headers — a `category` row followed by the `month`/field-name row — so each field column carries its category alongside its name. Deactivated fields are excluded, consistent with `show`/`summary`.
 
-On import, fields named in the header under a known, non-`investment` category that don't exist yet are auto-created. A cell with no existing value for that field/month is committed immediately; a cell that would overwrite an existing value is staged as a pending commit instead (visible via `show` / `commit`), so nothing is silently overwritten. Empty cells are skipped; non-numeric cells are skipped with a warning; columns naming an unrecognized category are reported as errors and skipped.
+On import, fields named in the header under a known, non-`investment` category that don't exist yet are auto-created. A cell with no existing value for that field/month is committed immediately; a cell that would overwrite an existing value is staged as a pending commit instead (review with `commit list`), so nothing is silently overwritten. Empty cells are skipped; non-numeric cells are skipped with a warning; columns naming an unrecognized category are reported as errors and skipped.
 
 **Legacy CSVs** (exported before the category header row existed) still import for columns that name already-active fields. Columns naming unknown fields are reported as errors and skipped — without a category row there is no category to auto-create them under.
 
@@ -176,18 +179,39 @@ summary
 - `<command> usage` — detailed help for any command (e.g. `update usage`)
 - `exit` / `quit` / `q` — exit the application
 
-#### Tab Completion & History
+#### Interactive REPL
 
-- `<TAB>` completes command names at the start of a line, and subcommand names once a top-level command has been typed (via a prompt_toolkit completion menu)
-- While browsing command-name completions, the first line of each command's usage text appears in the menu's metadata column; `<command> usage` still prints the full usage block
+These features are active only in a real interactive terminal (`vault`, not piped `vault --test`).
+
+**Completion & history**
+
+- `<TAB>` completes command and subcommand names (fuzzy matching — partial names like `sum` can match `summary`)
+- While browsing completions, the first line of each command's usage text appears in the menu's metadata column; `<command> usage` still prints the full usage block
+- Gray ghost text suggests the most recent matching prior command as you type
+- `<Ctrl-R>` opens reverse history search
 - Command history persists across sessions in `logs/.vault_history` (skipped in `--test` mode). The history file format changed with the prompt_toolkit switch — pre-existing readline history is not carried over.
 
-This is only active in a real interactive terminal — `--test` mode pipes commands via
-stdin, so it can't exercise tab-completion or history persistence. To check manually:
-run `vault` (without `--test`), press `<TAB>` at the empty prompt to see command
-completions, type a top-level command followed by a space and `<TAB>` to see subcommand
-completions, then `exit` and restart `vault` to confirm prior commands are recalled
-with the up arrow.
+**Status line**
+
+- Bottom toolbar: staged count, target month(s), price freshness (`live` / `cached` / `n/a`), and `[TEST]` in test mode
+- Right prompt: current net worth (refreshed after each command)
+
+**Input feedback**
+
+- Known commands are highlighted green; unknown first tokens are red (no error text is printed on submit)
+- Bare `update` walks active non-investment fields one prompt at a time, prefilled from the prior month
+
+**Key bindings**
+
+- **F2** — show the pending staged table
+- **Ctrl-D** (empty line) — exit (same as `exit` / `quit` / `q`)
+- **Esc Enter** — insert a newline for multi-line input
+
+Destructive commands (`field remove`, `commit undo`, CSV import overwrites) ask for confirmation in interactive mode; piped input auto-confirms.
+
+**Testing the REPL without a TTY**
+
+`python -m repl_harness` runs programmatic keystroke checks against a pipe-driven session (no database involved). Use it to verify prompt behavior without manual terminal testing.
 
 ## Project Structure
 
@@ -195,6 +219,7 @@ with the up arrow.
 Vault/
 ├── pyproject.toml        # Project configuration and metadata
 ├── README.md             # Project documentation
+├── repl_harness/         # Pipe-input REPL test harness (python -m repl_harness)
 ├── vault.db              # SQLite database (auto-created at runtime)
 └── src/
     └── Vault/
@@ -205,7 +230,8 @@ Vault/
         ├── helper.py       # Color codes and formatting utilities
         ├── logger.py       # Logging utility
         ├── price_fetcher.py # Live investment price fetching
-        └── prompt.py       # Interactive prompt implementation
+        ├── prompt.py       # Interactive prompt implementation
+        └── status.py       # REPL status toolbar and net-worth rprompt
 ```
 
 ## License

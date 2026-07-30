@@ -11,6 +11,7 @@ from .logger import Logger
 from .db_handler import DBHandler
 from .price_fetcher import PriceFetcher
 from .pending_commits import PendingCommits
+from .status import StatusLine
 from .helper import *
 
 # Command classes
@@ -57,18 +58,29 @@ class CLI:
 
         # Need to init classes before using
         command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, DiffCommand, HelpCommand, InvestmentCommand, ExportCommand, ImportCommand, ExitCommand]
+        self._command_instances = []
         self.load_command_classes(command_class_list)
 
     def run(self):
         print_banner(test_mode=self.test_mode)
         history_path = None if self.test_mode else "logs/.vault_history"
+        status_line = StatusLine(
+            self.pending_commits,
+            self.price_fetcher,
+            db=self.db,
+            test_mode=self.test_mode,
+        )
         prompt = Prompt(
             project_name=self.project_name,
             logger=self.logger,
-            state_data_viewer=self.pending_commits.render,
             routes=self.routes,
             history_path=history_path,
+            status_line=status_line,
         )
+        if prompt.interactive:
+            prompt._build_session()
+            for instance in self._command_instances:
+                instance.prompt_session = prompt._session
         prompt.render()
 
     # ------------------------------------------------------------------
@@ -82,6 +94,7 @@ class CLI:
 
         for cls in command_class_list:
             instance = cls(self.db, self.logger, self.price_fetcher, self.pending_commits)
+            self._command_instances.append(instance)
             usage = instance.usage_text()
             route_children = self._build_route_children(instance, instance.sub_commands)
             for name, entry_point in instance.init_command().items():
@@ -114,17 +127,11 @@ class CLI:
         return children
 
     def _wrap_entry_point(self, entry_point, instance):
-        """Wrap a command class's entry point so the pending-commits table stays in sync
-        with whether that command mutates the shared pending-commits list."""
-
         def wrapped(options):
             if options and options[0] == "usage":
                 instance.usage()
-                self.pending_commits.suppress_next_render()
                 return
             entry_point(options)
-            if not instance.mutates_commits:
-                self.pending_commits.suppress_next_render()
 
         return wrapped
 
