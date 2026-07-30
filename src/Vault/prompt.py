@@ -95,9 +95,9 @@ if PromptSession is not None:
                     return [("", text)]
 
                 style = (
-                    "lexer.command.known"
+                    "class:lexer.command.known"
                     if first in self._prompt.routes
-                    else "lexer.command.unknown"
+                    else "class:lexer.command.unknown"
                 )
                 return [("", text[:index]), (style, first), ("", text[end:])]
 
@@ -145,14 +145,58 @@ def _build_prompt_message(project_name):
     if project_name.startswith("[TEST] "):
         name = project_name.removeprefix("[TEST] ")
         return FormattedText([
-            ("prompt.test", "[TEST]"),
-            ("prompt.name", f" {name}"),
-            ("prompt.sep", "/>"),
+            ("class:prompt.test", "[TEST]"),
+            ("class:prompt.name", f" {name}"),
+            ("class:prompt.sep", "/>"),
         ])
     return FormattedText([
-        ("prompt.name", project_name),
-        ("prompt.sep", "/>"),
+        ("class:prompt.name", project_name),
+        ("class:prompt.sep", "/>"),
     ])
+
+
+def create_repl_session(prompt, *, input=None, output=None):
+    """Build a PromptSession with the same settings as the interactive Vault REPL."""
+    if PromptSession is None:
+        raise RuntimeError("prompt_toolkit is required for an interactive REPL session")
+
+    if prompt.history_path:
+        try:
+            history_file = Path(prompt.history_path)
+            history_file.parent.mkdir(parents=True, exist_ok=True)
+            if not history_file.exists():
+                prompt.logger.log(
+                    f"[history] no existing history file at {prompt.history_path}, starting fresh"
+                )
+            history = FileHistory(prompt.history_path)
+        except OSError as e:
+            prompt.logger.log(
+                f"[history] failed to write history file {prompt.history_path}: {e}"
+            )
+            history = InMemoryHistory()
+    else:
+        history = InMemoryHistory()
+
+    session_kwargs = dict(
+        history=history,
+        completer=FuzzyCompleter(_VaultCompleter(prompt)),
+        auto_suggest=AutoSuggestFromHistory(),
+        enable_history_search=True,
+        complete_while_typing=False,
+        complete_style=CompleteStyle.MULTI_COLUMN,
+        style=VAULT_STYLE,
+        lexer=_VaultLexer(prompt),
+        key_bindings=_build_key_bindings(prompt),
+    )
+    if prompt.status_line is not None:
+        session_kwargs["bottom_toolbar"] = prompt._status_line
+        session_kwargs["rprompt"] = prompt._rprompt
+    if input is not None:
+        session_kwargs["input"] = input
+    if output is not None:
+        session_kwargs["output"] = output
+
+    return PromptSession(**session_kwargs)
 
 
 class Prompt:
@@ -225,40 +269,7 @@ class Prompt:
     def _build_session(self):
         if self._session is not None:
             return
-
-        if self.history_path:
-            try:
-                history_file = Path(self.history_path)
-                history_file.parent.mkdir(parents=True, exist_ok=True)
-                if not history_file.exists():
-                    self.logger.log(
-                        f"[history] no existing history file at {self.history_path}, starting fresh"
-                    )
-                history = FileHistory(self.history_path)
-            except OSError as e:
-                self.logger.log(
-                    f"[history] failed to write history file {self.history_path}: {e}"
-                )
-                history = InMemoryHistory()
-        else:
-            history = InMemoryHistory()
-
-        session_kwargs = dict(
-            history=history,
-            completer=FuzzyCompleter(_VaultCompleter(self)),
-            auto_suggest=AutoSuggestFromHistory(),
-            enable_history_search=True,
-            complete_while_typing=False,
-            complete_style=CompleteStyle.MULTI_COLUMN,
-            style=VAULT_STYLE,
-            lexer=_VaultLexer(self),
-            key_bindings=_build_key_bindings(self),
-        )
-        if self.status_line is not None:
-            session_kwargs["bottom_toolbar"] = self._status_line
-            session_kwargs["rprompt"] = self._rprompt
-
-        self._session = PromptSession(**session_kwargs)
+        self._session = create_repl_session(self)
 
     def _status_line(self):
         return self.status_line.toolbar_text()

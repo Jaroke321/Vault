@@ -46,25 +46,25 @@ class StatusLine:
     def toolbar_text(self):
         """Return styled toolbar fragments, or a plain string without prompt_toolkit."""
         fragments = [
-            ("status.staged", f"{self.pending_commits.staged_count} staged"),
+            ("class:status.staged", f"{self.pending_commits.staged_count} staged"),
         ]
 
         month = self._target_month_text()
         if month:
             fragments.extend([
-                ("status.default", " · "),
-                ("status.month", month),
+                ("class:status.default", " · "),
+                ("class:status.month", month),
             ])
 
         fragments.extend([
-            ("status.default", " · "),
-            ("status.prices", f"prices: {self._price_freshness()}"),
+            ("class:status.default", " · "),
+            ("class:status.prices", f"prices: {self._price_freshness()}"),
         ])
 
         if self.test_mode:
             fragments.extend([
-                ("status.default", " · "),
-                ("status.test", "[TEST]"),
+                ("class:status.default", " · "),
+                ("class:status.test", "[TEST]"),
             ])
 
         if FormattedText is not None:
@@ -117,7 +117,7 @@ class StatusLine:
         else:
             text = f"net: {format_value(self._cached_net_worth, '$')}"
 
-        fragments = [("status.net", text)]
+        fragments = [("class:status.net", text)]
         if FormattedText is not None:
             return FormattedText(fragments)
         return text
