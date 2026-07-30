@@ -5,7 +5,8 @@ from .routing import Route
 
 try:
     from prompt_toolkit import PromptSession
-    from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    from prompt_toolkit.completion import Completer, Completion, FuzzyCompleter
     from prompt_toolkit.history import FileHistory, InMemoryHistory
     from prompt_toolkit.shortcuts import CompleteStyle
     from prompt_toolkit.styles import Style
@@ -152,7 +153,9 @@ class Prompt:
 
         session_kwargs = dict(
             history=history,
-            completer=_VaultCompleter(self),
+            completer=FuzzyCompleter(_VaultCompleter(self)),
+            auto_suggest=AutoSuggestFromHistory(),
+            enable_history_search=True,
             complete_while_typing=False,
             complete_style=CompleteStyle.MULTI_COLUMN,
         )
