@@ -5,9 +5,13 @@ from ..data_types import CATEGORIES
 
 try:
     from prompt_toolkit.validation import Validator, ValidationError
+    from prompt_toolkit.shortcuts import prompt as pt_prompt
+    from prompt_toolkit.key_binding import KeyBindings
 except ImportError:
     Validator = object
     ValidationError = Exception
+    pt_prompt = None
+    KeyBindings = None
 
 
 class _NumericValidator(Validator):
@@ -19,6 +23,12 @@ class _NumericValidator(Validator):
             float(text.replace("$", "").replace(",", ""))
         except ValueError as exc:
             raise ValidationError(message="Enter a number or leave blank to skip") from exc
+
+
+if KeyBindings is not None:
+    _FIELD_PROMPT_BINDINGS = KeyBindings()
+else:
+    _FIELD_PROMPT_BINDINGS = None
 
 
 class UpdateCommand(BaseCommand):
@@ -85,6 +95,38 @@ class UpdateCommand(BaseCommand):
             return f"{year - 1}-12"
         return f"{year:04d}-{mon - 1:02d}"
 
+    def _staged_value(self, field_name, target_month):
+        for entry in self.commits:
+            if entry[0] == field_name and entry[1] == target_month:
+                return entry[2]
+        return None
+
+    def _print_field_context(self, field_name, category, unit, target_month, previous_month):
+        prior = self.db.get_value(field_name, previous_month)
+        current = self.db.get_value(field_name, target_month)
+        staged = self._staged_value(field_name, target_month)
+
+        print(f"\n  {field_name} ({category}) · {target_month}")
+        if prior is not None:
+            print(f"    prior {previous_month}: {self.format_value(prior, unit)}")
+        else:
+            print(f"    prior {previous_month}: (none)")
+        if current is not None:
+            print(f"    saved {target_month}:  {self.format_value(current, unit)}")
+        if staged is not None:
+            print(f"    staged:         {self.format_value(staged, unit)}")
+
+    def _ask_field_amount(self, unit, index, total):
+        """Isolated one-line prompt — avoids inheriting the main REPL session bindings."""
+        return pt_prompt(
+            f"  amount ({unit}) [{index}/{total}]: ",
+            placeholder="blank to skip",
+            validator=_NumericValidator(),
+            validate_while_typing=False,
+            multiline=False,
+            key_bindings=_FIELD_PROMPT_BINDINGS,
+        )
+
     ####################################
     # Sub-commands
     ####################################
@@ -95,21 +137,20 @@ class UpdateCommand(BaseCommand):
 
         previous_month = self._previous_month(target_month)
         staged = []
+        fields = [
+            (name, category, unit)
+            for name, category, unit in self.db.get_active_fields()
+            if not CATEGORIES[category].is_priced
+        ]
+        total = len(fields)
+
+        print(f"\n  Interactive update for {target_month} ({total} fields)")
+        print("  Enter an amount, blank to skip, Ctrl-C to cancel.\n")
 
         try:
-            for field_name, category, unit in self.db.get_active_fields():
-                if CATEGORIES[category].is_priced:
-                    continue
-
-                prior = self.db.get_value(field_name, previous_month)
-                default = str(prior) if prior is not None else ""
-                message = f"{field_name} ({category}, {unit}): "
-                raw = self.prompt_session.prompt(
-                    message,
-                    default=default,
-                    placeholder=f"{category} · {unit} · blank to skip",
-                    validator=_NumericValidator(),
-                )
+            for index, (field_name, category, unit) in enumerate(fields, start=1):
+                self._print_field_context(field_name, category, unit, target_month, previous_month)
+                raw = self._ask_field_amount(unit, index, total)
 
                 if not raw.strip():
                     continue
@@ -118,11 +159,15 @@ class UpdateCommand(BaseCommand):
                 if amount is None:
                     continue
 
-                old = self.db.get_value(field_name, target_month)
-                if old is not None and old != amount:
+                current = self.db.get_value(field_name, target_month)
+                already_staged = self._staged_value(field_name, target_month)
+                if amount == current or amount == already_staged:
+                    continue
+
+                if current is not None and current != amount:
                     print(
                         f"[WARN] Overwriting value for {field_name} {target_month}: "
-                        f"{self.format_value(old)} → {self.format_value(amount)}"
+                        f"{self.format_value(current, unit)} → {self.format_value(amount, unit)}"
                     )
 
                 staged.append([field_name, target_month, amount])
@@ -132,6 +177,11 @@ class UpdateCommand(BaseCommand):
 
         for entry in staged:
             self.commits.append(entry)
+
+        if staged:
+            print(f"\n  Staged {len(staged)} update(s). Use 'commit list' to review.")
+        else:
+            print("\n  No changes staged.")
 
     def _single_update(self, options, target_month):
         field_name, raw = options[0], options[1]
