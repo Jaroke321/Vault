@@ -4,16 +4,26 @@ The VAULT header stays pinned at the top, each command's output refills one
 fixed output pane in place, and the input line and status bar never move.
 Only activates for a TTY stdin/stdout session (see `cli.py`); piped runs use
 the scrolling `Prompt.render()` REPL unchanged.
+
+Thread invariant: command handlers run on a worker thread (via
+run_in_executor) so a slow command can't freeze the UI's event loop. That
+worker thread may only *append* to `VaultApp._body` (via `_PaneWriter`) --
+list.append and slicing are atomic under the GIL, so concurrent reads from
+the render loop are safe. Everything else -- clearing the body, floats,
+focus, `_busy`, `_scroll` -- is touched only on the asyncio loop thread,
+scheduled with `call_soon_threadsafe` from the worker when needed.
 """
 
+import asyncio
 import contextlib
-import io
+import threading
 import traceback
 
 from prompt_toolkit.application import Application, get_app
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import FuzzyCompleter
+from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, to_formatted_text
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout.containers import Float, FloatContainer, HSplit, VSplit, Window, WindowAlign
@@ -57,12 +67,66 @@ def _join_lines(lines: list[list[tuple[str, str]]]) -> list[tuple[str, str]]:
     return joined
 
 
+class _PaneWriter:
+    """A stdout/stderr replacement that streams completed lines into `app._body`.
+
+    Runs on the worker thread. Buffers text until a newline, then parses the
+    completed line's ANSI and appends it to `app._body` -- the one mutation
+    the worker thread is allowed to make directly (see module docstring).
+    Invalidation is scheduled back onto the loop thread and throttled so a
+    command printing many lines doesn't flood the render loop with redraws.
+    """
+
+    _THROTTLE_SECONDS = 0.05
+
+    def __init__(self, app: "VaultApp", loop: asyncio.AbstractEventLoop):
+        self._app = app
+        self._loop = loop
+        self._pending = ""
+        self._invalidate_scheduled = False
+
+    def write(self, text: str) -> int:
+        self._pending += text
+        while "\n" in self._pending:
+            line, self._pending = self._pending.split("\n", 1)
+            self._app._body.append(_split_ansi_lines(line)[0])
+        self._schedule_invalidate()
+        return len(text)
+
+    def flush(self) -> None:
+        pass
+
+    def finish(self) -> None:
+        """Flush any partial last line (one with no trailing newline)."""
+        if self._pending:
+            self._app._body.append(_split_ansi_lines(self._pending)[0])
+            self._pending = ""
+        self._loop.call_soon_threadsafe(self._app.application.invalidate)
+
+    def _schedule_invalidate(self) -> None:
+        if self._invalidate_scheduled:
+            return
+        self._invalidate_scheduled = True
+
+        def _arm_timer():
+            self._loop.call_later(self._THROTTLE_SECONDS, _fire)
+
+        def _fire():
+            self._invalidate_scheduled = False
+            self._app.application.invalidate()
+
+        self._loop.call_soon_threadsafe(_arm_timer)
+
+
 class VaultApp:
     """Full-screen prompt_toolkit Application driving the fixed-layout REPL."""
 
     def __init__(self, prompt, *, input=None, output=None):
         self.prompt = prompt
         self._body: list[list[tuple[str, str]]] = []
+        self._busy = False
+        self.idle = threading.Event()
+        self.idle.set()
 
         self.input_buffer = Buffer(
             history=_build_history(prompt),
@@ -71,6 +135,7 @@ class VaultApp:
             enable_history_search=True,
             complete_while_typing=False,
             multiline=False,
+            read_only=Condition(lambda: self._busy),
             accept_handler=self._on_accept,
         )
 
@@ -83,7 +148,7 @@ class VaultApp:
         output_window = Window(self.output_control, wrap_lines=False)
 
         rule_window = Window(
-            FormattedTextControl(lambda: [("class:rule", "─" * 1000)]),
+            FormattedTextControl(self._rule_text),
             height=Dimension.exact(1),
         )
 
@@ -145,12 +210,15 @@ class VaultApp:
             return ""
         return self.prompt.status_line.rprompt_text()
 
+    def _rule_text(self):
+        return [("class:rule", "running…" if self._busy else "")]
+
     def _build_key_bindings(self):
         kb = KeyBindings()
 
         @kb.add("c-d")
         def _exit_on_empty(event):
-            if not event.current_buffer.text:
+            if not self._busy and not event.current_buffer.text:
                 event.app.exit(exception=ExitSignal())
 
         @kb.add("escape", "enter")
@@ -162,7 +230,6 @@ class VaultApp:
     def _on_accept(self, buffer):
         text = buffer.text
         tokens = text.split()
-        echo = f"{self.prompt.project_name}/> {text}"
 
         if not tokens:
             self._body = []
@@ -171,28 +238,43 @@ class VaultApp:
         command, options = self.prompt.validate_command(text)
 
         if command is None:
+            echo = f"{self.prompt.project_name}/> {text}"
             lines = _split_ansi_lines(echo)
             lines.append([("", f"Unknown command '{tokens[0]}'. Type 'help' to see available commands.")])
             self._body = lines
             return False
 
-        captured = io.StringIO()
+        self._body = _split_ansi_lines(f"{self.prompt.project_name}/> {text}")
+        self._busy = True
+        self.idle.clear()
+        get_app().create_background_task(self._dispatch(command, options))
+        return False
+
+    async def _dispatch(self, command, options):
+        loop = asyncio.get_running_loop()
         try:
-            with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+            await loop.run_in_executor(None, self._run_blocking, loop, command, options)
+        finally:
+            self._busy = False
+            self.idle.set()
+            self.application.invalidate()
+
+    def _run_blocking(self, loop, command, options):
+        """Run `command(options)` on the worker thread, streaming its output into the pane."""
+        writer = _PaneWriter(self, loop)
+        try:
+            with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
                 command(options)
         except ExitSignal:
-            get_app().exit(exception=ExitSignal())
-            return False
+            writer.finish()
+            loop.call_soon_threadsafe(lambda: self.application.exit(exception=ExitSignal()))
+            return
         except BaseException:
-            captured.write(traceback.format_exc())
+            writer.write(traceback.format_exc())
+        writer.finish()
 
         if self.prompt.status_line is not None:
             self.prompt.status_line.refresh_net_worth()
-
-        lines = _split_ansi_lines(echo)
-        lines.extend(_split_ansi_lines(captured.getvalue()))
-        self._body = lines
-        return False
 
     def run(self):
         self.application.run()
