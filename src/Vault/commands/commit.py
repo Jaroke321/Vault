@@ -11,6 +11,7 @@ class CommitCommand(BaseCommand):
     USAGE = """
   commit                        Commit all pending staged updates to the database
   commit <n> [n ...]            Commit one or more pending updates by index
+  commit list                   Show pending staged updates awaiting commit
   commit undo                   Reverse the most recent commit
   commit undo <n>               Reverse the last N commits
   commit history                Show past commits, most recent first (reference for commit undo)
@@ -86,6 +87,9 @@ class CommitCommand(BaseCommand):
         # Remove from list everything we just commited
         for i in sorted(successful_commits, reverse=True):
             self.commits.pop(i)
+
+    def sub_list(self, options):
+        self.commits.render()
 
     def sub_undo(self, options):
         count = 1
