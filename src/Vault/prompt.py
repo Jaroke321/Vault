@@ -10,9 +10,11 @@ try:
     from prompt_toolkit.history import FileHistory, InMemoryHistory
     from prompt_toolkit.shortcuts import CompleteStyle
     from prompt_toolkit.styles import Style
+    from prompt_toolkit.formatted_text import FormattedText
 except ImportError:
     PromptSession = None
     Style = None
+    FormattedText = None
 
 
 class ExitSignal(Exception):
@@ -68,9 +70,26 @@ if PromptSession is not None:
         "status.month": "ansicyan",
         "status.prices": "ansigreen",
         "status.test": "ansiyellow bold",
+        "prompt.test": "ansiyellow bold",
+        "prompt.name": "ansicyan bold",
+        "prompt.sep": "ansibrightblack",
     })
 else:
     VAULT_STYLE = None
+
+
+def _build_prompt_message(project_name):
+    if project_name.startswith("[TEST] "):
+        name = project_name.removeprefix("[TEST] ")
+        return FormattedText([
+            ("prompt.test", "[TEST]"),
+            ("prompt.name", f" {name}"),
+            ("prompt.sep", "/>"),
+        ])
+    return FormattedText([
+        ("prompt.name", project_name),
+        ("prompt.sep", "/>"),
+    ])
 
 
 class Prompt:
@@ -92,6 +111,10 @@ class Prompt:
         self.history_path = history_path
         self.status_line = status_line
         self._prompt_str = f"{project_name}/>"
+        self._prompt_message = (
+            _build_prompt_message(project_name)
+            if FormattedText is not None else None
+        )
 
         self.interactive = PromptSession is not None and sys.stdin.isatty()
         self._session = None
@@ -127,7 +150,7 @@ class Prompt:
 
     def _read_line(self):
         if self.interactive and self._session is not None:
-            return self._session.prompt(self._prompt_str)
+            return self._session.prompt(self._prompt_message)
         return input(self._prompt_str)
 
     def _build_session(self):
@@ -158,10 +181,10 @@ class Prompt:
             enable_history_search=True,
             complete_while_typing=False,
             complete_style=CompleteStyle.MULTI_COLUMN,
+            style=VAULT_STYLE,
         )
         if self.status_line is not None:
             session_kwargs["bottom_toolbar"] = self._status_line
-            session_kwargs["style"] = VAULT_STYLE
 
         self._session = PromptSession(**session_kwargs)
 
