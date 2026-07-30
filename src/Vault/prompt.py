@@ -12,11 +12,13 @@ try:
     from prompt_toolkit.styles import Style
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.lexers import Lexer
+    from prompt_toolkit.key_binding import KeyBindings
 except ImportError:
     PromptSession = None
     Style = None
     FormattedText = None
     Lexer = None
+    KeyBindings = None
 
 
 class ExitSignal(Exception):
@@ -101,6 +103,25 @@ if PromptSession is not None:
 
             return get_line
 
+    def _build_key_bindings(prompt):
+        kb = KeyBindings()
+
+        @kb.add("f2")
+        def _show_pending(event):
+            if prompt.status_line is not None:
+                prompt.status_line.pending_commits.render()
+
+        @kb.add("c-d")
+        def _exit_on_empty(event):
+            if not event.current_buffer.text:
+                event.app.exit(exception=ExitSignal())
+
+        @kb.add("escape", "enter")
+        def _insert_newline(event):
+            event.current_buffer.insert_text("\n")
+
+        return kb
+
 
 if PromptSession is not None:
     VAULT_STYLE = Style.from_dict({
@@ -166,17 +187,15 @@ class Prompt:
         if self.interactive:
             self._build_session()
 
-        command_input = self._read_line()
+        try:
+            while True:
+                command_input = self._read_line()
+                command, options = self.validate_command(command_input)
 
-        while True:
+                if command is None:
+                    continue
 
-            command, options = self.validate_command(command_input)
-
-            if command is not None:
-                try:
-                    command(options)
-                except ExitSignal:
-                    break
+                command(options)
 
                 if self.status_line is not None:
                     self.status_line.refresh_net_worth()
@@ -188,15 +207,20 @@ class Prompt:
                 # and then sub commands can return back more dicts with sub commands
                 # could potentially allow for more complex and dynamic decision trees
 
-
-            command_input = self._read_line()
+        except ExitSignal:
+            pass
 
         print("Exiting Vault...")
 
     def _read_line(self):
-        if self.interactive and self._session is not None:
-            return self._session.prompt(self._prompt_message)
-        return input(self._prompt_str)
+        try:
+            if self.interactive and self._session is not None:
+                return self._session.prompt(self._prompt_message)
+            return input(self._prompt_str)
+        except ExitSignal:
+            raise
+        except (EOFError, KeyboardInterrupt):
+            raise ExitSignal() from None
 
     def _build_session(self):
         if self._session is not None:
@@ -228,6 +252,7 @@ class Prompt:
             complete_style=CompleteStyle.MULTI_COLUMN,
             style=VAULT_STYLE,
             lexer=_VaultLexer(self),
+            key_bindings=_build_key_bindings(self),
         )
         if self.status_line is not None:
             session_kwargs["bottom_toolbar"] = self._status_line
