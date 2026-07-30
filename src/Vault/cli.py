@@ -66,6 +66,7 @@ class CLI:
         status_line = StatusLine(
             self.pending_commits,
             self.price_fetcher,
+            db=self.db,
             test_mode=self.test_mode,
         )
         prompt = Prompt(

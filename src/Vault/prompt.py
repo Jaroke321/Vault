@@ -70,6 +70,7 @@ if PromptSession is not None:
         "status.month": "ansicyan",
         "status.prices": "ansigreen",
         "status.test": "ansiyellow bold",
+        "status.net": "ansimagenta",
         "prompt.test": "ansiyellow bold",
         "prompt.name": "ansicyan bold",
         "prompt.sep": "ansibrightblack",
@@ -136,6 +137,9 @@ class Prompt:
                 except ExitSignal:
                     break
 
+                if self.status_line is not None:
+                    self.status_line.refresh_net_worth()
+
                 # it might be cool to be able to handle return values from the called function
                 # This would be relevant since the command classes are calling an entry point functin
                 # Right now the entry point function handles its own sub commands
@@ -185,11 +189,15 @@ class Prompt:
         )
         if self.status_line is not None:
             session_kwargs["bottom_toolbar"] = self._status_line
+            session_kwargs["rprompt"] = self._rprompt
 
         self._session = PromptSession(**session_kwargs)
 
     def _status_line(self):
         return self.status_line.toolbar_text()
+
+    def _rprompt(self):
+        return self.status_line.rprompt_text()
 
     def validate_command(self, command: str):
 
