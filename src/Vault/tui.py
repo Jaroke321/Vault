@@ -69,6 +69,27 @@ def _join_lines(lines: list[list[tuple[str, str]]]) -> list[tuple[str, str]]:
     return joined
 
 
+def _clip_line(line: list[tuple[str, str]], width: int) -> list[tuple[str, str]]:
+    """Clip a line's (style, text) fragments to `width` visible columns.
+
+    Fragments here already have ANSI separated into style tags by
+    _split_ansi_lines, so this is plain text-width clipping across
+    fragments -- no escape sequences to preserve, unlike truncate_ansi.
+    """
+    clipped: list[tuple[str, str]] = []
+    remaining = width
+    for style, text in line:
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            clipped.append((style, text[:remaining]))
+            remaining = 0
+        else:
+            clipped.append((style, text))
+            remaining -= len(text)
+    return clipped
+
+
 class _PaneWriter:
     """A stdout/stderr replacement that streams completed lines into `app._body`.
 
@@ -253,6 +274,7 @@ class VaultApp:
         self.prompt = prompt
         self._body: list[list[tuple[str, str]]] = []
         self._busy = False
+        self._scroll = 0
         self.idle = threading.Event()
         self.idle.set()
 
@@ -272,8 +294,8 @@ class VaultApp:
         )
         header_window = Window(header_control, height=Dimension.exact(3))
 
-        self.output_control = FormattedTextControl(lambda: _join_lines(self._body))
-        output_window = Window(self.output_control, wrap_lines=False)
+        self.output_control = FormattedTextControl(self._render_body)
+        self.output_window = Window(self.output_control, wrap_lines=False)
 
         rule_window = Window(
             FormattedTextControl(self._rule_text),
@@ -301,7 +323,7 @@ class VaultApp:
         self.root_container = FloatContainer(
             content=HSplit([
                 header_window,
-                output_window,
+                self.output_window,
                 rule_window,
                 self.input_window,
                 status_window,
@@ -341,7 +363,41 @@ class VaultApp:
         return self.prompt.status_line.rprompt_text()
 
     def _rule_text(self):
-        return [("class:rule", "running…" if self._busy else "")]
+        if self._busy:
+            return [("class:rule", "running…")]
+        total = len(self._body)
+        if total == 0:
+            return [("class:rule", "")]
+        height = self._visible_height()
+        first = min(self._scroll, max(total - 1, 0)) + 1
+        last = min(self._scroll + height, total)
+        return [("class:rule", f"lines {first}–{last} of {total} · PgUp/PgDn")]
+
+    def _visible_height(self) -> int:
+        """Best-known visible row count of the output pane.
+
+        Prefers the Window's own render_info (accurate after the first paint,
+        follows terminal resizes); falls back to the fixed chrome height
+        (header 3 + rule 1 + input 1 + status 1) before anything has rendered.
+        """
+        render_info = self.output_window.render_info
+        if render_info is not None:
+            return render_info.window_height
+        return max(self.application.output.get_size().rows - 6, 1)
+
+    def _max_scroll(self) -> int:
+        return max(len(self._body) - self._visible_height(), 0)
+
+    def _clamp_scroll(self) -> None:
+        self._scroll = max(0, min(self._scroll, self._max_scroll()))
+
+    def _render_body(self):
+        height = self._visible_height()
+        render_info = self.output_window.render_info
+        width = render_info.window_width if render_info is not None else 80
+        visible = self._body[self._scroll:self._scroll + height]
+        clipped = [_clip_line(line, width) for line in visible]
+        return _join_lines(clipped)
 
     def _build_key_bindings(self):
         kb = KeyBindings()
@@ -355,6 +411,24 @@ class VaultApp:
         def _insert_newline(event):
             event.current_buffer.insert_text("\n")
 
+        @kb.add("pageup")
+        def _scroll_up(event):
+            self._scroll -= self._visible_height()
+            self._clamp_scroll()
+
+        @kb.add("pagedown")
+        def _scroll_down(event):
+            self._scroll += self._visible_height()
+            self._clamp_scroll()
+
+        @kb.add("c-home")
+        def _scroll_top(event):
+            self._scroll = 0
+
+        @kb.add("c-end")
+        def _scroll_bottom(event):
+            self._scroll = self._max_scroll()
+
         return kb
 
     def _on_accept(self, buffer):
@@ -363,6 +437,7 @@ class VaultApp:
 
         if not tokens:
             self._body = []
+            self._scroll = 0
             return False
 
         command, options = self.prompt.validate_command(text)
@@ -372,9 +447,11 @@ class VaultApp:
             lines = _split_ansi_lines(echo)
             lines.append([("", f"Unknown command '{tokens[0]}'. Type 'help' to see available commands.")])
             self._body = lines
+            self._scroll = 0
             return False
 
         self._body = _split_ansi_lines(f"{self.prompt.project_name}/> {text}")
+        self._scroll = 0
         self._busy = True
         self.idle.clear()
         get_app().create_background_task(self._dispatch(command, options))
