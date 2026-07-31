@@ -16,6 +16,7 @@ scheduled with `call_soon_threadsafe` from the worker when needed.
 
 import asyncio
 import contextlib
+import io
 import queue
 import threading
 import traceback
@@ -410,6 +411,19 @@ class VaultApp:
         @kb.add("escape", "enter")
         def _insert_newline(event):
             event.current_buffer.insert_text("\n")
+
+        @kb.add("f2")
+        def _show_pending(event):
+            if self._busy or self.prompt.status_line is None:
+                return
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                self.prompt.status_line.pending_commits.render()
+            text = captured.getvalue()
+            if not text:
+                return
+            self._body = _split_ansi_lines(text)
+            self._scroll = 0
 
         @kb.add("pageup")
         def _scroll_up(event):
