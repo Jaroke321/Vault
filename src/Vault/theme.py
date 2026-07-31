@@ -86,6 +86,11 @@ def ansi(theme: Theme, name: str) -> str:
     return getattr(theme, name).ansi
 
 
+def styled_staged_index(text: str, theme: Theme = DEFAULT) -> str:
+    """Bold, themed index cell for staged/history tables."""
+    return f"{BOLD}{theme.staged_index.ansi}{text}{RESET}"
+
+
 def build_ptk_style(theme: Theme = DEFAULT):
     """Build the prompt_toolkit Style dict for REPL/TUI chrome."""
     if Style is None:
