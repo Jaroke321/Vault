@@ -136,6 +136,8 @@ if PromptSession is not None:
         "prompt.sep": "ansibrightblack",
         "lexer.command.known": "ansigreen bold",
         "lexer.command.unknown": "ansired",
+        "header": "ansiyellow bold",
+        "rule": "ansibrightblack",
     })
 else:
     VAULT_STYLE = None

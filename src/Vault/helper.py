@@ -143,13 +143,15 @@ def print_banner(test_mode: bool = False) -> None:
         print(f"{BOLD}{YELLOW}  TEST MODE — in-memory database, changes are not saved{RESET}")
     print()
 
-_BANNER_COMPACT = _BANNER_DOUBLE_BLOCKY.strip("\n")
+_BANNER_COMPACT = _BANNER_H.strip("\n")
+HEADER_HEIGHT = len(_BANNER_COMPACT.split("\n")) + 1  # art rows + marker row
 
 def header_lines(test_mode: bool = False) -> list[str]:
-    """Return the fixed 3-line TUI header: 2 rows of compact art plus a marker row."""
-    lines = [f"{BOLD}{YELLOW}{line}{RESET}" for line in _BANNER_COMPACT.split("\n")]
+    """Return the fixed TUI header as plain text (no embedded ANSI) -- the TUI
+    applies color via the `class:header` style, not literal escape codes."""
+    lines = list(_BANNER_COMPACT.split("\n"))
     if test_mode:
-        lines.append(f"{BOLD}{YELLOW}  TEST MODE — in-memory database, changes are not saved{RESET}")
+        lines.append("  TEST MODE — in-memory database, changes are not saved")
     else:
         lines.append("")
     return lines

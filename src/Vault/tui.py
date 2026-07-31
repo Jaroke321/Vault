@@ -36,7 +36,7 @@ from prompt_toolkit.layout.menus import MultiColumnCompletionsMenu
 from prompt_toolkit.layout.processors import AfterInput, AppendAutoSuggestion, BeforeInput, ConditionalProcessor
 from prompt_toolkit.widgets import Button, Dialog, Label, TextArea
 
-from .helper import header_lines
+from .helper import HEADER_HEIGHT, header_lines
 from .prompt import (
     ExitSignal,
     VAULT_STYLE,
@@ -305,9 +305,11 @@ class VaultApp:
         )
 
         header_control = FormattedTextControl(
-            lambda: [("class:header", line) for line in header_lines(prompt.project_name.startswith("[TEST]"))]
+            lambda: _join_lines([
+                [("class:header", line)] for line in header_lines(prompt.project_name.startswith("[TEST]"))
+            ])
         )
-        header_window = Window(header_control, height=Dimension.exact(3))
+        header_window = Window(header_control, height=Dimension.exact(HEADER_HEIGHT))
 
         self.output_control = FormattedTextControl(self._render_body)
         self.output_window = Window(self.output_control, wrap_lines=False)
@@ -393,12 +395,13 @@ class VaultApp:
 
         Prefers the Window's own render_info (accurate after the first paint,
         follows terminal resizes); falls back to the fixed chrome height
-        (header 3 + rule 1 + input 1 + status 1) before anything has rendered.
+        (header HEADER_HEIGHT + rule 1 + input 1 + status 1) before anything
+        has rendered.
         """
         render_info = self.output_window.render_info
         if render_info is not None:
             return render_info.window_height
-        return max(self.application.output.get_size().rows - 6, 1)
+        return max(self.application.output.get_size().rows - (HEADER_HEIGHT + 3), 1)
 
     def _max_scroll(self) -> int:
         return max(len(self._body) - self._visible_height(), 0)
