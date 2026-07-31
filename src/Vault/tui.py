@@ -166,7 +166,12 @@ class TuiUi:
         self.dialog_ready = threading.Event()
 
     def confirm(self, message: str) -> bool:
-        """Block the calling (worker) thread until the user picks Yes/No."""
+        """Block the calling (worker) thread until the user picks Yes/No.
+
+        Escape counts as No -- the safe, non-destructive default for a
+        confirm dialog guarding something like `commit undo` or `field
+        remove`.
+        """
         result_queue: queue.Queue[bool] = queue.Queue()
 
         def _show():
@@ -177,13 +182,21 @@ class TuiUi:
                 self._app.application.invalidate()
                 result_queue.put(value)
 
+            yes_button = Button(text="Yes", handler=lambda: _respond(True))
+            no_button = Button(text="No", handler=lambda: _respond(False))
+
+            cancel_kb = KeyBindings()
+            cancel_kb.add("escape")(lambda event: _respond(False))
+            for button in (yes_button, no_button):
+                button.control.key_bindings = merge_key_bindings([
+                    button.control.key_bindings,
+                    cancel_kb,
+                ])
+
             dialog = Dialog(
                 title="Confirm",
                 body=Label(text=message),
-                buttons=[
-                    Button(text="Yes", handler=lambda: _respond(True)),
-                    Button(text="No", handler=lambda: _respond(False)),
-                ],
+                buttons=[yes_button, no_button],
                 modal=True,
             )
             dialog_float = Float(content=dialog)
