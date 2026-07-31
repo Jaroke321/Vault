@@ -1,18 +1,19 @@
 import random
 import re
 
-# ANSI color codes
-BOLD     = "\033[1m"
-RESET    = "\033[0m"
-
-BLACK    = "\033[30m"
-RED      = "\033[31m"
-GREEN    = "\033[32m"
-YELLOW   = "\033[33m"
-BLUE     = "\033[34m"
-MAGENTA  = "\033[35m"
-CYAN     = "\033[36m"
-WHITE    = "\033[37m"
+from .theme import (
+    DEFAULT,
+    BLACK,
+    BLUE,
+    BOLD,
+    CYAN,
+    GREEN,
+    MAGENTA,
+    RED,
+    RESET,
+    WHITE,
+    YELLOW,
+)
 
 NOTE_MARKER = "*"
 NOTE_LEGEND = "* = has note"
@@ -62,7 +63,7 @@ def truncate_ansi(s: str, width: int) -> str:
 def note_label(name: str, has_note: bool) -> str:
     return name + NOTE_MARKER if has_note else name
 
-def cat_label(name: str, color: str = CYAN) -> str:
+def cat_label(name: str, color: str = DEFAULT.accent.ansi) -> str:
     return f"{BOLD}{color}{name.upper()}{RESET}"
 
 _PREFIX_UNITS = {"$", "€", "£", "¥"}
@@ -138,9 +139,10 @@ _STARTUP_BANNERS = (
 
 def print_banner(test_mode: bool = False) -> None:
     art = random.choice(_STARTUP_BANNERS)
-    print(f"\n{BOLD}{YELLOW}{art}{RESET}")
+    header = DEFAULT.header.ansi
+    print(f"\n{BOLD}{header}{art}{RESET}")
     if test_mode:
-        print(f"{BOLD}{YELLOW}  TEST MODE — in-memory database, changes are not saved{RESET}")
+        print(f"{BOLD}{header}  TEST MODE — in-memory database, changes are not saved{RESET}")
     print()
 
 _BANNER_COMPACT = _BANNER_H.strip("\n")
