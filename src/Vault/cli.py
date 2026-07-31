@@ -6,7 +6,8 @@ import time
 from pathlib import Path
 
 # Extra imports of useful things
-from .prompt import ExitSignal, Prompt, PromptSession
+from .prompt import Prompt, PromptSession
+from .repl_shared import ExitSignal
 from .routing import Route
 from .logger import Logger
 from .db_handler import DBHandler

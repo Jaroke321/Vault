@@ -1,5 +1,5 @@
 from .base import BaseCommand
-from ..prompt import ExitSignal
+from ..repl_shared import ExitSignal
 
 class ExitCommand(BaseCommand):
 
