@@ -26,14 +26,14 @@ from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import FuzzyCompleter
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, to_formatted_text
-from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
 from prompt_toolkit.layout.containers import Float, FloatContainer, HSplit, VSplit, Window, WindowAlign
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.layout.menus import MultiColumnCompletionsMenu
-from prompt_toolkit.layout.processors import AppendAutoSuggestion, BeforeInput
-from prompt_toolkit.widgets import Button, Dialog, Label
+from prompt_toolkit.layout.processors import AfterInput, AppendAutoSuggestion, BeforeInput, ConditionalProcessor
+from prompt_toolkit.widgets import Button, Dialog, Label, TextArea
 
 from .helper import header_lines
 from .prompt import (
@@ -120,6 +120,15 @@ class _PaneWriter:
         self._loop.call_soon_threadsafe(_arm_timer)
 
 
+class _Cancelled:
+    """Sentinel pushed by a dialog's cancel path; `ask()` turns it into a
+    synthesized KeyboardInterrupt on the worker thread, since Ctrl-C is no
+    longer delivered as a signal once the terminal is in raw mode."""
+
+
+_CANCELLED = _Cancelled()
+
+
 class TuiUi:
     """Modal dialogs for commands that need to ask the user something.
 
@@ -163,6 +172,78 @@ class TuiUi:
 
         self._app.application.loop.call_soon_threadsafe(_show)
         return result_queue.get()
+
+    def ask(self, message: str, *, placeholder: str = "", validator=None) -> str:
+        """Block the calling (worker) thread until the user submits or cancels a value.
+
+        Raises KeyboardInterrupt (synthesized, not OS-delivered) if cancelled,
+        matching what `pt_prompt` raised on Ctrl-C -- so callers written against
+        the old `except KeyboardInterrupt` cancel path need no changes.
+        """
+        result_queue: queue.Queue = queue.Queue()
+
+        def _show():
+            def _dismiss():
+                self._app.root_container.floats.remove(dialog_float)
+                self._app.layout.focus(self._app.input_window)
+                self.dialog_ready.clear()
+                self._app.application.invalidate()
+
+            def _submit():
+                # TextArea only *displays* validation state -- it does not refuse
+                # acceptance on its own when triggered via a button rather than Enter.
+                if not text_area.buffer.validate():
+                    return
+                value = text_area.text
+                _dismiss()
+                result_queue.put(value)
+
+            def _cancel():
+                _dismiss()
+                result_queue.put(_CANCELLED)
+
+            is_empty = Condition(lambda: text_area.text == "")
+            text_area = TextArea(
+                multiline=False,
+                validator=validator,
+                input_processors=[
+                    ConditionalProcessor(
+                        AfterInput(placeholder, style="class:dialog.placeholder"),
+                        filter=is_empty,
+                    ),
+                ],
+                accept_handler=lambda buf: _submit() or False,
+            )
+
+            cancel_kb = KeyBindings()
+            cancel_kb.add("escape")(lambda event: _cancel())
+            existing_bindings = text_area.control.key_bindings
+            text_area.control.key_bindings = (
+                merge_key_bindings([existing_bindings, cancel_kb])
+                if existing_bindings is not None
+                else cancel_kb
+            )
+
+            dialog = Dialog(
+                title="Input",
+                body=HSplit([Label(text=message), text_area]),
+                buttons=[
+                    Button(text="OK", handler=_submit),
+                    Button(text="Cancel", handler=_cancel),
+                ],
+                modal=True,
+            )
+            dialog_float = Float(content=dialog)
+            self._app.root_container.floats.append(dialog_float)
+            self._app.layout.focus(text_area)
+            self.dialog_ready.set()
+            self._app.application.invalidate()
+
+        self._app.application.loop.call_soon_threadsafe(_show)
+        value = result_queue.get()
+        if value is _CANCELLED:
+            raise KeyboardInterrupt
+        return value
 
 
 class VaultApp:
