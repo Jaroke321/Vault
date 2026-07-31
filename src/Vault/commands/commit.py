@@ -1,7 +1,5 @@
 from .base import BaseCommand
-from rich.progress import track
 import datetime
-import time
 
 class CommitCommand(BaseCommand):
 
@@ -52,8 +50,9 @@ class CommitCommand(BaseCommand):
     def _commit_all(self):
         batch = []
 
-        for current_commit in track(self.commits, description="Commiting Changes..."):
-            time.sleep(0.25)
+        total = len(self.commits)
+        for index, current_commit in enumerate(self.commits, start=1):
+            print(f"Committing {index}/{total} …")
             self._apply_and_capture(current_commit, batch)
 
         if batch:
@@ -68,8 +67,9 @@ class CommitCommand(BaseCommand):
         successful_commits = []
         batch = []
 
-        for commit_str in track(unique_options, description="Commiting Changes..."):
-            time.sleep(0.5)
+        total = len(unique_options)
+        for index, commit_str in enumerate(unique_options, start=1):
+            print(f"Committing {index}/{total} …")
 
             try:
                 commit_num = int(commit_str)
