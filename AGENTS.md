@@ -11,6 +11,8 @@ for the command reference.
 - Run: `vault` (real DB) or `vault --test` (seeded in-memory DB; no network;
   no persisted changes). **Never omit `--test` when testing** — that hits the real DB.
 - REPL is blocking stdin. Non-interactive: `printf 'summary\nexit\n' | vault --test`.
+  Piped runs (stdin or stdout not a TTY) always use the classic scrolling REPL — the
+  fixed-layout full-screen TUI (`tui.py`) only activates for a real interactive terminal.
 - Staged `update`s are not saved until `commit`. `exit` / `quit` / `q` leaves the prompt.
 - Live prices (`yfinance`) on real startup; degrades to cache when offline.
   `vault.db` and `logs/` are gitignored runtime artifacts.
