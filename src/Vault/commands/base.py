@@ -1,14 +1,15 @@
+import sys
 from abc import ABC, abstractmethod
 import datetime
 import re
-import sys
-from ..ui import ReplUi
+
 from ..helper import (
     cat_label, format_value, note_label, print_banner, sparkline,
     BOLD, RESET,
     BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE,
     NOTE_LEGEND,
 )
+from ..ui import ReplUi
 
 try:
     from prompt_toolkit.shortcuts import confirm

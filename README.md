@@ -251,12 +251,15 @@ Vault/
         ├── cli.py          # CLI logic and entry point
         ├── data_types/     # Category classes (Cash, Retirement, Asset, Debt, Investment)
         ├── db_handler.py   # SQLite database layer
-        ├── helper.py       # Color codes and formatting utilities
+        ├── helper.py       # Formatting utilities (ANSI re-exports from theme)
         ├── logger.py       # Logging utility
         ├── price_fetcher.py # Live investment price fetching
-        ├── prompt.py       # Interactive prompt implementation (scrolling REPL, VAULT_NO_SCREEN=1)
+        ├── prompt.py       # Classic scrolling REPL (VAULT_NO_SCREEN=1)
+        ├── repl_shared.py  # Shared REPL widgets, history, key bindings
         ├── status.py       # REPL status toolbar and net-worth rprompt
-        └── tui.py          # Fixed-layout full-screen app (default interactive mode)
+        ├── theme.py        # Semantic colors for output and REPL chrome
+        ├── tui.py          # Fixed-layout full-screen app (default interactive mode)
+        └── ui.py           # ReplUi protocol for command confirm/ask injection
 ```
 
 ## License

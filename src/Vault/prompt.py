@@ -19,8 +19,6 @@ try:
 except ImportError:
     PromptSession = None
 
-VAULT_STYLE = build_ptk_style()
-
 
 def create_repl_session(prompt, *, input=None, output=None):
     """Build a PromptSession with the same settings as the interactive Vault REPL."""
@@ -34,7 +32,7 @@ def create_repl_session(prompt, *, input=None, output=None):
         enable_history_search=True,
         complete_while_typing=False,
         complete_style=CompleteStyle.MULTI_COLUMN,
-        style=VAULT_STYLE,
+        style=build_ptk_style(),
         lexer=VaultLexer(prompt),
         key_bindings=build_common_key_bindings(
             on_f2=lambda: (
