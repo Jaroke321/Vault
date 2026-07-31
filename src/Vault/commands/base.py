@@ -12,9 +12,19 @@ from ..helper import (
 from ..ui import ReplUi
 
 try:
-    from prompt_toolkit.shortcuts import confirm
+    from prompt_toolkit.shortcuts import confirm, prompt as pt_prompt
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.validation import Validator
 except ImportError:
     confirm = None
+    pt_prompt = None
+    KeyBindings = None
+    Validator = object  # type: ignore[assignment,misc]
+
+if KeyBindings is not None:
+    _ISOLATED_PROMPT_BINDINGS = KeyBindings()
+else:
+    _ISOLATED_PROMPT_BINDINGS = None
 
 def subroute(**children: str):
     """Mark a `sub_*` method as routing one level deeper.
@@ -125,6 +135,36 @@ class BaseCommand(ABC):
         if confirm is None:
             return True
         return confirm(message)
+
+    def _can_prompt_interactively(self) -> bool:
+        """True when TUI or classic REPL can show confirm/ask prompts."""
+        return self.ui is not None or self.prompt_session is not None
+
+    def _ask(
+        self,
+        message: str,
+        *,
+        placeholder: str = "",
+        validator: Validator | None = None,
+    ) -> str:
+        """Return user input.
+
+        Fixed-layout TUI mode uses a modal dialog via ``self.ui.ask``; the
+        classic scrolling REPL uses an isolated ``pt_prompt`` (no main-session
+        key bindings). Cancel raises ``KeyboardInterrupt`` in both modes.
+        """
+        if self.ui is not None:
+            return self.ui.ask(message, placeholder=placeholder, validator=validator)
+        if not self._can_prompt_interactively() or pt_prompt is None:
+            raise RuntimeError("interactive prompt unavailable")
+        return pt_prompt(
+            message,
+            placeholder=placeholder,
+            validator=validator,
+            validate_while_typing=False,
+            multiline=False,
+            key_bindings=_ISOLATED_PROMPT_BINDINGS,
+        )
 
     # ------------------------------------------------------------------
     # Helpers
