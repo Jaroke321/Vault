@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+from .repl_shared import ExitSignal
 from .routing import Route
 
 try:
@@ -19,10 +20,6 @@ except ImportError:
     FormattedText = None
     Lexer = None
     KeyBindings = None
-
-
-class ExitSignal(Exception):
-    pass
 
 
 if PromptSession is not None:
