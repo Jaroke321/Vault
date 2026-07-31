@@ -88,6 +88,8 @@ class CLI:
         if use_tui:
             from .tui import VaultApp
             app = VaultApp(prompt)
+            for instance in self._command_instances:
+                instance.ui = app.ui
             try:
                 app.run()
             except ExitSignal:

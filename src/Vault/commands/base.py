@@ -63,12 +63,13 @@ class BaseCommand(ABC):
     # Detailed usage text printed by `<command> usage` and internal error paths.
     USAGE: str | None = None
 
-    def __init__(self, db, logger, price_fetcher=None, commits=None, *, prompt_session=None):
+    def __init__(self, db, logger, price_fetcher=None, commits=None, *, prompt_session=None, ui=None):
         self.db = db
         self.logger = logger
         self.price_fetcher = price_fetcher
         self.commits = commits
         self.prompt_session = prompt_session
+        self.ui = ui
         self.sub_commands = {
             name.removeprefix("sub_"): getattr(self, name)
             for name in dir(self)
@@ -110,6 +111,8 @@ class BaseCommand(ABC):
 
     def _confirm(self, message: str) -> bool:
         """Return True to proceed. Non-interactive sessions auto-confirm."""
+        if self.ui is not None:
+            return self.ui.confirm(message)
         if self.prompt_session is None or not sys.stdin.isatty():
             return True
         if confirm is None:
