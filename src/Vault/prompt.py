@@ -9,38 +9,17 @@ from .repl_shared import (
     build_prompt_message,
 )
 from .routing import Route
+from .theme import build_ptk_style
 
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
     from prompt_toolkit.completion import FuzzyCompleter
     from prompt_toolkit.shortcuts import CompleteStyle
-    from prompt_toolkit.styles import Style
-    from prompt_toolkit.formatted_text import FormattedText
 except ImportError:
     PromptSession = None
-    Style = None
-    FormattedText = None
 
-
-if PromptSession is not None:
-    VAULT_STYLE = Style.from_dict({
-        "status.default": "",
-        "status.staged": "bold",
-        "status.month": "ansicyan",
-        "status.prices": "ansigreen",
-        "status.test": "ansiyellow bold",
-        "status.net": "ansimagenta",
-        "prompt.test": "ansiyellow bold",
-        "prompt.name": "ansicyan bold",
-        "prompt.sep": "ansibrightblack",
-        "lexer.command.known": "ansigreen bold",
-        "lexer.command.unknown": "ansired",
-        "header": "ansiyellow bold",
-        "rule": "ansibrightblack",
-    })
-else:
-    VAULT_STYLE = None
+VAULT_STYLE = build_ptk_style()
 
 
 def create_repl_session(prompt, *, input=None, output=None):
