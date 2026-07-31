@@ -37,7 +37,6 @@ from prompt_toolkit.layout.processors import AfterInput, AppendAutoSuggestion, B
 from prompt_toolkit.widgets import Button, Dialog, Label, TextArea
 
 from .helper import HEADER_HEIGHT, header_lines
-from .prompt import VAULT_STYLE
 from .repl_shared import (
     ExitSignal,
     VaultCompleter,
@@ -46,6 +45,7 @@ from .repl_shared import (
     build_history,
     build_prompt_message,
 )
+from .theme import build_ptk_style
 
 
 def _split_ansi_lines(text: str) -> list[list[tuple[str, str]]]:
@@ -361,7 +361,7 @@ class VaultApp:
 
         self.application = Application(
             layout=self.layout,
-            style=VAULT_STYLE,
+            style=build_ptk_style(),
             key_bindings=self.key_bindings,
             full_screen=True,
             input=input,
