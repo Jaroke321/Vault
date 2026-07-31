@@ -146,7 +146,7 @@ def check_tui_f2_renders_pending_table():
 def check_tui_ctrl_d_exits():
     with VaultTuiHarness(_tui_routes()) as harness:
         harness.feed_ctrl_d()
-        harness._thread.join(timeout=5)
+        harness.join(timeout=5)
         alive = harness.is_alive()
         exited = harness.result.get("exited")
     assert not alive, "app did not exit on Ctrl-D"

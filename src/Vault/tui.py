@@ -91,6 +91,20 @@ def _clip_line(line: list[tuple[str, str]], width: int) -> list[tuple[str, str]]
     return clipped
 
 
+def _bind_escape(control, handler) -> None:
+    """Merge an `escape` binding onto a control's existing key bindings.
+
+    Dialog doesn't expose a way to add its own bindings (see confirm()/ask()
+    below), so this attaches directly to a focusable child's control instead.
+    """
+    escape_kb = KeyBindings()
+    escape_kb.add("escape")(handler)
+    existing = control.key_bindings
+    control.key_bindings = (
+        merge_key_bindings([existing, escape_kb]) if existing is not None else escape_kb
+    )
+
+
 class _PaneWriter:
     """A stdout/stderr replacement that streams completed lines into `app._body`.
 
@@ -184,14 +198,8 @@ class TuiUi:
 
             yes_button = Button(text="Yes", handler=lambda: _respond(True))
             no_button = Button(text="No", handler=lambda: _respond(False))
-
-            cancel_kb = KeyBindings()
-            cancel_kb.add("escape")(lambda event: _respond(False))
             for button in (yes_button, no_button):
-                button.control.key_bindings = merge_key_bindings([
-                    button.control.key_bindings,
-                    cancel_kb,
-                ])
+                _bind_escape(button.control, lambda event: _respond(False))
 
             dialog = Dialog(
                 title="Confirm",
@@ -250,14 +258,7 @@ class TuiUi:
                 accept_handler=lambda buf: _submit() or False,
             )
 
-            cancel_kb = KeyBindings()
-            cancel_kb.add("escape")(lambda event: _cancel())
-            existing_bindings = text_area.control.key_bindings
-            text_area.control.key_bindings = (
-                merge_key_bindings([existing_bindings, cancel_kb])
-                if existing_bindings is not None
-                else cancel_kb
-            )
+            _bind_escape(text_area.control, lambda event: _cancel())
 
             dialog = Dialog(
                 title="Input",
@@ -435,8 +436,7 @@ class VaultApp:
             text = captured.getvalue()
             if not text:
                 return
-            self._body = _split_ansi_lines(text)
-            self._scroll = 0
+            self._set_body(_split_ansi_lines(text))
 
         @kb.add("pageup")
         def _scroll_up(event):
@@ -458,13 +458,16 @@ class VaultApp:
 
         return kb
 
+    def _set_body(self, lines: list[list[tuple[str, str]]]) -> None:
+        self._body = lines
+        self._scroll = 0
+
     def _on_accept(self, buffer):
         text = buffer.text
         tokens = text.split()
 
         if not tokens:
-            self._body = []
-            self._scroll = 0
+            self._set_body([])
             return False
 
         command, options = self.prompt.validate_command(text)
@@ -473,12 +476,10 @@ class VaultApp:
             echo = f"{self.prompt.project_name}/> {text}"
             lines = _split_ansi_lines(echo)
             lines.append([("", f"Unknown command '{tokens[0]}'. Type 'help' to see available commands.")])
-            self._body = lines
-            self._scroll = 0
+            self._set_body(lines)
             return False
 
-        self._body = _split_ansi_lines(f"{self.prompt.project_name}/> {text}")
-        self._scroll = 0
+        self._set_body(_split_ansi_lines(f"{self.prompt.project_name}/> {text}"))
         self._busy = True
         self.idle.clear()
         get_app().create_background_task(self._dispatch(command, options))

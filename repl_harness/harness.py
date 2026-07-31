@@ -191,6 +191,10 @@ class VaultTuiHarness(AbstractContextManager):
     def is_alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    def join(self, timeout: float = 5.0) -> None:
+        if self._thread is not None:
+            self._thread.join(timeout)
+
 
 def feed_text(text: str, *, submit: bool = True) -> FeedFn:
     def _feed(pipe):
