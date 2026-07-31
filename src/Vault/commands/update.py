@@ -118,8 +118,11 @@ class UpdateCommand(BaseCommand):
 
     def _ask_field_amount(self, unit, index, total):
         """Isolated one-line prompt — avoids inheriting the main REPL session bindings."""
+        message = f"  amount ({unit}) [{index}/{total}]: "
+        if self.ui is not None:
+            return self.ui.ask(message, placeholder="blank to skip", validator=_NumericValidator())
         return pt_prompt(
-            f"  amount ({unit}) [{index}/{total}]: ",
+            message,
             placeholder="blank to skip",
             validator=_NumericValidator(),
             validate_while_typing=False,
@@ -131,7 +134,7 @@ class UpdateCommand(BaseCommand):
     # Sub-commands
     ####################################
     def _interactive_update(self, target_month):
-        if self.prompt_session is None:
+        if self.ui is None and self.prompt_session is None:
             self.usage()
             return
 
