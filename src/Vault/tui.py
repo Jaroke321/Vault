@@ -37,13 +37,13 @@ from prompt_toolkit.layout.processors import AfterInput, AppendAutoSuggestion, B
 from prompt_toolkit.widgets import Button, Dialog, Label, TextArea
 
 from .helper import HEADER_HEIGHT, header_lines
-from .prompt import (
+from .prompt import VAULT_STYLE
+from .repl_shared import (
     ExitSignal,
-    VAULT_STYLE,
-    _build_history,
-    _build_prompt_message,
-    _VaultCompleter,
-    _VaultLexer,
+    VaultCompleter,
+    VaultLexer,
+    build_history,
+    build_prompt_message,
 )
 
 
@@ -294,8 +294,8 @@ class VaultApp:
         self.idle.set()
 
         self.input_buffer = Buffer(
-            history=_build_history(prompt),
-            completer=FuzzyCompleter(_VaultCompleter(prompt)),
+            history=build_history(prompt),
+            completer=FuzzyCompleter(VaultCompleter(prompt)),
             auto_suggest=AutoSuggestFromHistory(),
             enable_history_search=True,
             complete_while_typing=False,
@@ -321,9 +321,9 @@ class VaultApp:
 
         input_control = BufferControl(
             buffer=self.input_buffer,
-            lexer=_VaultLexer(prompt),
+            lexer=VaultLexer(prompt),
             input_processors=[
-                BeforeInput(_build_prompt_message(prompt.project_name)),
+                BeforeInput(build_prompt_message(prompt.project_name)),
                 AppendAutoSuggestion(),
             ],
         )
