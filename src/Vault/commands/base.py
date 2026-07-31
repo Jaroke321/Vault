@@ -1,18 +1,30 @@
+import sys
 from abc import ABC, abstractmethod
 import datetime
 import re
-import sys
+
 from ..helper import (
     cat_label, format_value, note_label, print_banner, sparkline,
     BOLD, RESET,
     BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE,
     NOTE_LEGEND,
 )
+from ..ui import ReplUi
 
 try:
-    from prompt_toolkit.shortcuts import confirm
+    from prompt_toolkit.shortcuts import confirm, prompt as pt_prompt
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.validation import Validator
 except ImportError:
     confirm = None
+    pt_prompt = None
+    KeyBindings = None
+    Validator = object  # type: ignore[assignment,misc]
+
+if KeyBindings is not None:
+    _ISOLATED_PROMPT_BINDINGS = KeyBindings()
+else:
+    _ISOLATED_PROMPT_BINDINGS = None
 
 def subroute(**children: str):
     """Mark a `sub_*` method as routing one level deeper.
@@ -63,13 +75,13 @@ class BaseCommand(ABC):
     # Detailed usage text printed by `<command> usage` and internal error paths.
     USAGE: str | None = None
 
-    def __init__(self, db, logger, price_fetcher=None, commits=None, *, prompt_session=None, ui=None):
+    def __init__(self, db, logger, price_fetcher=None, commits=None, *, prompt_session=None, ui: ReplUi | None = None):
         self.db = db
         self.logger = logger
         self.price_fetcher = price_fetcher
         self.commits = commits
         self.prompt_session = prompt_session
-        self.ui = ui
+        self.ui: ReplUi | None = ui
         self.sub_commands = {
             name.removeprefix("sub_"): getattr(self, name)
             for name in dir(self)
@@ -110,7 +122,12 @@ class BaseCommand(ABC):
         print(self.usage_text())
 
     def _confirm(self, message: str) -> bool:
-        """Return True to proceed. Non-interactive sessions auto-confirm."""
+        """Return True to proceed.
+
+        Fixed-layout TUI mode uses a modal dialog via ``self.ui.confirm``; the
+        classic scrolling REPL uses ``prompt_toolkit.shortcuts.confirm`` when
+        a session is available; non-TTY sessions auto-confirm.
+        """
         if self.ui is not None:
             return self.ui.confirm(message)
         if self.prompt_session is None or not sys.stdin.isatty():
@@ -118,6 +135,36 @@ class BaseCommand(ABC):
         if confirm is None:
             return True
         return confirm(message)
+
+    def _can_prompt_interactively(self) -> bool:
+        """True when TUI or classic REPL can show confirm/ask prompts."""
+        return self.ui is not None or self.prompt_session is not None
+
+    def _ask(
+        self,
+        message: str,
+        *,
+        placeholder: str = "",
+        validator: Validator | None = None,
+    ) -> str:
+        """Return user input.
+
+        Fixed-layout TUI mode uses a modal dialog via ``self.ui.ask``; the
+        classic scrolling REPL uses an isolated ``pt_prompt`` (no main-session
+        key bindings). Cancel raises ``KeyboardInterrupt`` in both modes.
+        """
+        if self.ui is not None:
+            return self.ui.ask(message, placeholder=placeholder, validator=validator)
+        if not self._can_prompt_interactively() or pt_prompt is None:
+            raise RuntimeError("interactive prompt unavailable")
+        return pt_prompt(
+            message,
+            placeholder=placeholder,
+            validator=validator,
+            validate_while_typing=False,
+            multiline=False,
+            key_bindings=_ISOLATED_PROMPT_BINDINGS,
+        )
 
     # ------------------------------------------------------------------
     # Helpers

@@ -11,7 +11,8 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 from Vault.logger import Logger
-from Vault.prompt import ExitSignal, Prompt, create_repl_session
+from Vault.prompt import Prompt, create_repl_session
+from Vault.repl_shared import ExitSignal
 from Vault.tui import VaultApp, _join_lines
 
 FeedFn = Callable[..., None]

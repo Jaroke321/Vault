@@ -5,13 +5,9 @@ from ..data_types import CATEGORIES
 
 try:
     from prompt_toolkit.validation import Validator, ValidationError
-    from prompt_toolkit.shortcuts import prompt as pt_prompt
-    from prompt_toolkit.key_binding import KeyBindings
 except ImportError:
     Validator = object
     ValidationError = Exception
-    pt_prompt = None
-    KeyBindings = None
 
 
 class _NumericValidator(Validator):
@@ -23,12 +19,6 @@ class _NumericValidator(Validator):
             float(text.replace("$", "").replace(",", ""))
         except ValueError as exc:
             raise ValidationError(message="Enter a number or leave blank to skip") from exc
-
-
-if KeyBindings is not None:
-    _FIELD_PROMPT_BINDINGS = KeyBindings()
-else:
-    _FIELD_PROMPT_BINDINGS = None
 
 
 class UpdateCommand(BaseCommand):
@@ -117,24 +107,18 @@ class UpdateCommand(BaseCommand):
             print(f"    staged:         {self.format_value(staged, unit)}")
 
     def _ask_field_amount(self, unit, index, total):
-        """Isolated one-line prompt — avoids inheriting the main REPL session bindings."""
         message = f"  amount ({unit}) [{index}/{total}]: "
-        if self.ui is not None:
-            return self.ui.ask(message, placeholder="blank to skip", validator=_NumericValidator())
-        return pt_prompt(
+        return self._ask(
             message,
             placeholder="blank to skip",
             validator=_NumericValidator(),
-            validate_while_typing=False,
-            multiline=False,
-            key_bindings=_FIELD_PROMPT_BINDINGS,
         )
 
     ####################################
     # Sub-commands
     ####################################
     def _interactive_update(self, target_month):
-        if self.ui is None and self.prompt_session is None:
+        if not self._can_prompt_interactively():
             self.usage()
             return
 

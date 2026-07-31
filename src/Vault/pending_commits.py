@@ -1,4 +1,4 @@
-from .helper import BOLD, MAGENTA, RESET
+from .theme import styled_staged_index
 
 class PendingCommits:
     """Owns the list of staged-but-not-yet-committed field updates and the logic to
@@ -53,6 +53,6 @@ class PendingCommits:
         print(sep)
         for row in rows:
             line = fmt.format(*row)
-            colored_num = f"{BOLD}{MAGENTA}{row[0]}{RESET}"
+            colored_num = styled_staged_index(row[0])
             line = line.replace(row[0], colored_num, 1)
             print(line)

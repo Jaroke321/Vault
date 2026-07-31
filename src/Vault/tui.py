@@ -37,14 +37,15 @@ from prompt_toolkit.layout.processors import AfterInput, AppendAutoSuggestion, B
 from prompt_toolkit.widgets import Button, Dialog, Label, TextArea
 
 from .helper import HEADER_HEIGHT, header_lines
-from .prompt import (
+from .repl_shared import (
     ExitSignal,
-    VAULT_STYLE,
-    _build_history,
-    _build_prompt_message,
-    _VaultCompleter,
-    _VaultLexer,
+    VaultCompleter,
+    VaultLexer,
+    build_common_key_bindings,
+    build_history,
+    build_prompt_message,
 )
+from .theme import build_ptk_style
 
 
 def _split_ansi_lines(text: str) -> list[list[tuple[str, str]]]:
@@ -167,6 +168,9 @@ _CANCELLED = _Cancelled()
 
 class TuiUi:
     """Modal dialogs for commands that need to ask the user something.
+
+    Implements :class:`~Vault.ui.ReplUi` — injected as ``BaseCommand.ui`` in
+    fixed-layout mode by ``cli.py``.
 
     Every method here is called from the worker thread (see the module
     docstring's thread invariant) and blocks that thread on a `queue.Queue`
@@ -294,8 +298,8 @@ class VaultApp:
         self.idle.set()
 
         self.input_buffer = Buffer(
-            history=_build_history(prompt),
-            completer=FuzzyCompleter(_VaultCompleter(prompt)),
+            history=build_history(prompt),
+            completer=FuzzyCompleter(VaultCompleter(prompt)),
             auto_suggest=AutoSuggestFromHistory(),
             enable_history_search=True,
             complete_while_typing=False,
@@ -321,9 +325,9 @@ class VaultApp:
 
         input_control = BufferControl(
             buffer=self.input_buffer,
-            lexer=_VaultLexer(prompt),
+            lexer=VaultLexer(prompt),
             input_processors=[
-                BeforeInput(_build_prompt_message(prompt.project_name)),
+                BeforeInput(build_prompt_message(prompt.project_name)),
                 AppendAutoSuggestion(),
             ],
         )
@@ -360,7 +364,7 @@ class VaultApp:
 
         self.application = Application(
             layout=self.layout,
-            style=VAULT_STYLE,
+            style=build_ptk_style(),
             key_bindings=self.key_bindings,
             full_screen=True,
             input=input,
@@ -418,19 +422,7 @@ class VaultApp:
         return _join_lines(clipped)
 
     def _build_key_bindings(self):
-        kb = KeyBindings()
-
-        @kb.add("c-d")
-        def _exit_on_empty(event):
-            if not self._busy and not event.current_buffer.text:
-                event.app.exit(exception=ExitSignal())
-
-        @kb.add("escape", "enter")
-        def _insert_newline(event):
-            event.current_buffer.insert_text("\n")
-
-        @kb.add("f2")
-        def _show_pending(event):
+        def _show_pending_in_pane():
             if self._busy or self.prompt.status_line is None:
                 return
             captured = io.StringIO()
@@ -441,25 +433,32 @@ class VaultApp:
                 return
             self._set_body(_split_ansi_lines(text))
 
-        @kb.add("pageup")
+        kb = build_common_key_bindings(
+            on_f2=_show_pending_in_pane,
+            can_exit=lambda: not self._busy,
+        )
+
+        scroll_kb = KeyBindings()
+
+        @scroll_kb.add("pageup")
         def _scroll_up(event):
             self._scroll -= self._visible_height()
             self._clamp_scroll()
 
-        @kb.add("pagedown")
+        @scroll_kb.add("pagedown")
         def _scroll_down(event):
             self._scroll += self._visible_height()
             self._clamp_scroll()
 
-        @kb.add("c-home")
+        @scroll_kb.add("c-home")
         def _scroll_top(event):
             self._scroll = 0
 
-        @kb.add("c-end")
+        @scroll_kb.add("c-end")
         def _scroll_bottom(event):
             self._scroll = self._max_scroll()
 
-        return kb
+        return merge_key_bindings([kb, scroll_kb])
 
     def _set_body(self, lines: list[list[tuple[str, str]]]) -> None:
         self._body = lines
