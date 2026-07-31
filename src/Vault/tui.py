@@ -16,6 +16,7 @@ scheduled with `call_soon_threadsafe` from the worker when needed.
 
 import asyncio
 import contextlib
+import queue
 import threading
 import traceback
 
@@ -32,6 +33,7 @@ from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.layout.menus import MultiColumnCompletionsMenu
 from prompt_toolkit.layout.processors import AppendAutoSuggestion, BeforeInput
+from prompt_toolkit.widgets import Button, Dialog, Label
 
 from .helper import header_lines
 from .prompt import (
@@ -118,6 +120,51 @@ class _PaneWriter:
         self._loop.call_soon_threadsafe(_arm_timer)
 
 
+class TuiUi:
+    """Modal dialogs for commands that need to ask the user something.
+
+    Every method here is called from the worker thread (see the module
+    docstring's thread invariant) and blocks that thread on a `queue.Queue`
+    while the dialog is shown on the loop thread. `dialog_ready` is the
+    handshake a test harness needs to feed keystrokes without racing the
+    dialog's Float being posted and taking focus.
+    """
+
+    def __init__(self, app: "VaultApp"):
+        self._app = app
+        self.dialog_ready = threading.Event()
+
+    def confirm(self, message: str) -> bool:
+        """Block the calling (worker) thread until the user picks Yes/No."""
+        result_queue: queue.Queue[bool] = queue.Queue()
+
+        def _show():
+            def _respond(value: bool):
+                self._app.root_container.floats.remove(dialog_float)
+                self._app.layout.focus(self._app.input_window)
+                self.dialog_ready.clear()
+                self._app.application.invalidate()
+                result_queue.put(value)
+
+            dialog = Dialog(
+                title="Confirm",
+                body=Label(text=message),
+                buttons=[
+                    Button(text="Yes", handler=lambda: _respond(True)),
+                    Button(text="No", handler=lambda: _respond(False)),
+                ],
+                modal=True,
+            )
+            dialog_float = Float(content=dialog)
+            self._app.root_container.floats.append(dialog_float)
+            self._app.layout.focus(dialog)
+            self.dialog_ready.set()
+            self._app.application.invalidate()
+
+        self._app.application.loop.call_soon_threadsafe(_show)
+        return result_queue.get()
+
+
 class VaultApp:
     """Full-screen prompt_toolkit Application driving the fixed-layout REPL."""
 
@@ -160,7 +207,7 @@ class VaultApp:
                 AppendAutoSuggestion(),
             ],
         )
-        input_window = Window(
+        self.input_window = Window(
             input_control,
             height=Dimension(min=1, max=5),
         )
@@ -175,7 +222,7 @@ class VaultApp:
                 header_window,
                 output_window,
                 rule_window,
-                input_window,
+                self.input_window,
                 status_window,
             ]),
             floats=[
@@ -187,7 +234,7 @@ class VaultApp:
             ],
         )
 
-        self.layout = Layout(self.root_container, focused_element=input_window)
+        self.layout = Layout(self.root_container, focused_element=self.input_window)
 
         self.key_bindings = self._build_key_bindings()
 
@@ -199,6 +246,8 @@ class VaultApp:
             input=input,
             output=output,
         )
+
+        self.ui = TuiUi(self)
 
     def _toolbar_text(self):
         if self.prompt.status_line is None:
