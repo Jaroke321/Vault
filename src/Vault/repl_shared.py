@@ -8,10 +8,12 @@ try:
     from prompt_toolkit.completion import Completer, Completion
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.history import FileHistory, InMemoryHistory
+    from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.lexers import Lexer
 except ImportError:
     Completer = None
     FormattedText = None
+    KeyBindings = None
     Lexer = None
 
 
@@ -96,6 +98,28 @@ if Completer is not None:
                 return [("", text[:index]), (style, first), ("", text[end:])]
 
             return get_line
+
+
+if KeyBindings is not None:
+
+    def build_common_key_bindings(*, on_f2, can_exit=lambda: True):
+        """Shared Ctrl-D, Esc+Enter, and F2 bindings for both REPL modes."""
+        kb = KeyBindings()
+
+        @kb.add("f2")
+        def _show_pending(event):
+            on_f2()
+
+        @kb.add("c-d")
+        def _exit_on_empty(event):
+            if can_exit() and not event.current_buffer.text:
+                event.app.exit(exception=ExitSignal())
+
+        @kb.add("escape", "enter")
+        def _insert_newline(event):
+            event.current_buffer.insert_text("\n")
+
+        return kb
 
 
 def build_prompt_message(project_name):

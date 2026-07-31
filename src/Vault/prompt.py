@@ -4,6 +4,7 @@ from .repl_shared import (
     ExitSignal,
     VaultCompleter,
     VaultLexer,
+    build_common_key_bindings,
     build_history,
     build_prompt_message,
 )
@@ -16,34 +17,10 @@ try:
     from prompt_toolkit.shortcuts import CompleteStyle
     from prompt_toolkit.styles import Style
     from prompt_toolkit.formatted_text import FormattedText
-    from prompt_toolkit.key_binding import KeyBindings
 except ImportError:
     PromptSession = None
     Style = None
     FormattedText = None
-    KeyBindings = None
-
-
-if PromptSession is not None:
-
-    def _build_key_bindings(prompt):
-        kb = KeyBindings()
-
-        @kb.add("f2")
-        def _show_pending(event):
-            if prompt.status_line is not None:
-                prompt.status_line.pending_commits.render()
-
-        @kb.add("c-d")
-        def _exit_on_empty(event):
-            if not event.current_buffer.text:
-                event.app.exit(exception=ExitSignal())
-
-        @kb.add("escape", "enter")
-        def _insert_newline(event):
-            event.current_buffer.insert_text("\n")
-
-        return kb
 
 
 if PromptSession is not None:
@@ -80,7 +57,13 @@ def create_repl_session(prompt, *, input=None, output=None):
         complete_style=CompleteStyle.MULTI_COLUMN,
         style=VAULT_STYLE,
         lexer=VaultLexer(prompt),
-        key_bindings=_build_key_bindings(prompt),
+        key_bindings=build_common_key_bindings(
+            on_f2=lambda: (
+                prompt.status_line.pending_commits.render()
+                if prompt.status_line is not None
+                else None
+            ),
+        ),
     )
     if prompt.status_line is not None:
         session_kwargs["bottom_toolbar"] = prompt._status_line

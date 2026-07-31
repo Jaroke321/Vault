@@ -42,6 +42,7 @@ from .repl_shared import (
     ExitSignal,
     VaultCompleter,
     VaultLexer,
+    build_common_key_bindings,
     build_history,
     build_prompt_message,
 )
@@ -418,19 +419,7 @@ class VaultApp:
         return _join_lines(clipped)
 
     def _build_key_bindings(self):
-        kb = KeyBindings()
-
-        @kb.add("c-d")
-        def _exit_on_empty(event):
-            if not self._busy and not event.current_buffer.text:
-                event.app.exit(exception=ExitSignal())
-
-        @kb.add("escape", "enter")
-        def _insert_newline(event):
-            event.current_buffer.insert_text("\n")
-
-        @kb.add("f2")
-        def _show_pending(event):
+        def _show_pending_in_pane():
             if self._busy or self.prompt.status_line is None:
                 return
             captured = io.StringIO()
@@ -441,25 +430,32 @@ class VaultApp:
                 return
             self._set_body(_split_ansi_lines(text))
 
-        @kb.add("pageup")
+        kb = build_common_key_bindings(
+            on_f2=_show_pending_in_pane,
+            can_exit=lambda: not self._busy,
+        )
+
+        scroll_kb = KeyBindings()
+
+        @scroll_kb.add("pageup")
         def _scroll_up(event):
             self._scroll -= self._visible_height()
             self._clamp_scroll()
 
-        @kb.add("pagedown")
+        @scroll_kb.add("pagedown")
         def _scroll_down(event):
             self._scroll += self._visible_height()
             self._clamp_scroll()
 
-        @kb.add("c-home")
+        @scroll_kb.add("c-home")
         def _scroll_top(event):
             self._scroll = 0
 
-        @kb.add("c-end")
+        @scroll_kb.add("c-end")
         def _scroll_bottom(event):
             self._scroll = self._max_scroll()
 
-        return kb
+        return merge_key_bindings([kb, scroll_kb])
 
     def _set_body(self, lines: list[list[tuple[str, str]]]) -> None:
         self._body = lines
