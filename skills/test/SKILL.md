@@ -101,7 +101,6 @@ added/updated, `Trend for '…':`, `Exiting Vault...`).
 
 ### Gotchas
 
-- `commit` shows a rich progress bar (~0.5s per staged item) — a short pause is expected.
 - `update` with no args only prints usage; use `update <field> <value>` (debt fields may need an asset value too).
 - `commodity list` / `commodity refresh` print "Price fetcher not available." in `--test` — expected (`price_fetcher=None`). Prefer `commodity tag` / `untag` / `override` for smoke checks.
 

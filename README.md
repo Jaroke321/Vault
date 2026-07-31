@@ -183,6 +183,13 @@ summary
 
 These features are active only in a real interactive terminal (`vault`, not piped `vault --test`).
 
+**Fixed-layout screen**
+
+In a real terminal, Vault runs as a full-screen app rather than a scrolling REPL: a compact header
+stays pinned at the top, each command's output refills one fixed pane in place, and the input line
+and status bar never move — the terminal itself never scrolls. Set `VAULT_NO_SCREEN=1` to fall back
+to the classic scrolling REPL described below instead.
+
 **Completion & history**
 
 - `<TAB>` completes command and subcommand names (fuzzy matching — partial names like `sum` can match `summary`)
@@ -206,12 +213,29 @@ These features are active only in a real interactive terminal (`vault`, not pipe
 - **F2** — show the pending staged table
 - **Ctrl-D** (empty line) — exit (same as `exit` / `quit` / `q`)
 - **Esc Enter** — insert a newline for multi-line input
+- **PageUp / PageDown** — scroll the output pane by one page (fixed-layout screen only)
+- **Ctrl-Home / Ctrl-End** — jump to the top / bottom of the current command's output (fixed-layout screen only)
 
-Destructive commands (`field remove`, `commit undo`, CSV import overwrites) ask for confirmation in interactive mode; piped input auto-confirms.
+Destructive commands (`field remove`, `commit undo`, CSV import overwrites) ask for confirmation — a
+modal dialog on the fixed-layout screen, or an inline prompt under `VAULT_NO_SCREEN=1`; piped input
+auto-confirms either way. On the fixed-layout screen, confirmations and the interactive `update`
+prompt block only the command in progress — Ctrl-C/Escape cancels at the dialog, not mid-computation
+(see *Ctrl-C semantics* below).
+
+**Ctrl-C semantics on the fixed-layout screen**
+
+A full-screen app puts the terminal in raw mode, so Ctrl-C arrives as a keystroke rather than
+`SIGINT` — it no longer interrupts a running command directly. A command blocked on a confirmation or
+input dialog can still be cancelled (Escape, or the dialog's Cancel/No button); a command that's
+genuinely mid-computation on its worker thread runs to completion, since Python offers no portable
+way to interrupt another thread. In practice this doesn't bite: Vault's commands are local SQLite
+reads/writes measured in milliseconds.
 
 **Testing the REPL without a TTY**
 
-`python -m repl_harness` runs programmatic keystroke checks against a pipe-driven session (no database involved). Use it to verify prompt behavior without manual terminal testing.
+`python -m repl_harness` runs programmatic keystroke checks against a pipe-driven session (no
+database involved) — `VaultReplHarness` drives the classic scrolling REPL, `VaultTuiHarness` drives
+the fixed-layout screen. Use it to verify prompt/dialog behavior without manual terminal testing.
 
 ## Project Structure
 
@@ -230,8 +254,9 @@ Vault/
         ├── helper.py       # Color codes and formatting utilities
         ├── logger.py       # Logging utility
         ├── price_fetcher.py # Live investment price fetching
-        ├── prompt.py       # Interactive prompt implementation
-        └── status.py       # REPL status toolbar and net-worth rprompt
+        ├── prompt.py       # Interactive prompt implementation (scrolling REPL, VAULT_NO_SCREEN=1)
+        ├── status.py       # REPL status toolbar and net-worth rprompt
+        └── tui.py          # Fixed-layout full-screen app (default interactive mode)
 ```
 
 ## License

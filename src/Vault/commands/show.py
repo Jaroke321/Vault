@@ -1,4 +1,5 @@
 from .base import BaseCommand
+from ..helper import visible_len
 
 class ShowCommand(BaseCommand):
 
@@ -137,6 +138,7 @@ class ShowCommand(BaseCommand):
                 delta_str = f"{sign}{self.format_value(abs(delta), unit)}"
                 color = self.GREEN if delta >= 0 else self.RED
                 delta_str_color = self.cat_label(delta_str, color)
-            print(f"  {month:<10}  {val_str:>17}  {delta_str_color:>17}")
+            delta_pad = " " * max(17 - visible_len(delta_str_color), 0)
+            print(f"  {month:<10}  {val_str:>17}  {delta_pad}{delta_str_color}")
             prev_value = value
         print()

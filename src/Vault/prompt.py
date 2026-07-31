@@ -136,6 +136,8 @@ if PromptSession is not None:
         "prompt.sep": "ansibrightblack",
         "lexer.command.known": "ansigreen bold",
         "lexer.command.unknown": "ansired",
+        "header": "ansiyellow bold",
+        "rule": "ansibrightblack",
     })
 else:
     VAULT_STYLE = None
@@ -155,30 +157,33 @@ def _build_prompt_message(project_name):
     ])
 
 
+def _build_history(prompt):
+    """Build the FileHistory/InMemoryHistory backing a Vault REPL session."""
+    if not prompt.history_path:
+        return InMemoryHistory()
+
+    try:
+        history_file = Path(prompt.history_path)
+        history_file.parent.mkdir(parents=True, exist_ok=True)
+        if not history_file.exists():
+            prompt.logger.log(
+                f"[history] no existing history file at {prompt.history_path}, starting fresh"
+            )
+        return FileHistory(prompt.history_path)
+    except OSError as e:
+        prompt.logger.log(
+            f"[history] failed to write history file {prompt.history_path}: {e}"
+        )
+        return InMemoryHistory()
+
+
 def create_repl_session(prompt, *, input=None, output=None):
     """Build a PromptSession with the same settings as the interactive Vault REPL."""
     if PromptSession is None:
         raise RuntimeError("prompt_toolkit is required for an interactive REPL session")
 
-    if prompt.history_path:
-        try:
-            history_file = Path(prompt.history_path)
-            history_file.parent.mkdir(parents=True, exist_ok=True)
-            if not history_file.exists():
-                prompt.logger.log(
-                    f"[history] no existing history file at {prompt.history_path}, starting fresh"
-                )
-            history = FileHistory(prompt.history_path)
-        except OSError as e:
-            prompt.logger.log(
-                f"[history] failed to write history file {prompt.history_path}: {e}"
-            )
-            history = InMemoryHistory()
-    else:
-        history = InMemoryHistory()
-
     session_kwargs = dict(
-        history=history,
+        history=_build_history(prompt),
         completer=FuzzyCompleter(_VaultCompleter(prompt)),
         auto_suggest=AutoSuggestFromHistory(),
         enable_history_search=True,
