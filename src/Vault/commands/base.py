@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import datetime
 import re
 import sys
+from ..ui import ReplUi
 from ..helper import (
     cat_label, format_value, note_label, print_banner, sparkline,
     BOLD, RESET,
@@ -63,13 +64,13 @@ class BaseCommand(ABC):
     # Detailed usage text printed by `<command> usage` and internal error paths.
     USAGE: str | None = None
 
-    def __init__(self, db, logger, price_fetcher=None, commits=None, *, prompt_session=None, ui=None):
+    def __init__(self, db, logger, price_fetcher=None, commits=None, *, prompt_session=None, ui: ReplUi | None = None):
         self.db = db
         self.logger = logger
         self.price_fetcher = price_fetcher
         self.commits = commits
         self.prompt_session = prompt_session
-        self.ui = ui
+        self.ui: ReplUi | None = ui
         self.sub_commands = {
             name.removeprefix("sub_"): getattr(self, name)
             for name in dir(self)
@@ -110,7 +111,12 @@ class BaseCommand(ABC):
         print(self.usage_text())
 
     def _confirm(self, message: str) -> bool:
-        """Return True to proceed. Non-interactive sessions auto-confirm."""
+        """Return True to proceed.
+
+        Fixed-layout TUI mode uses a modal dialog via ``self.ui.confirm``; the
+        classic scrolling REPL uses ``prompt_toolkit.shortcuts.confirm`` when
+        a session is available; non-TTY sessions auto-confirm.
+        """
         if self.ui is not None:
             return self.ui.confirm(message)
         if self.prompt_session is None or not sys.stdin.isatty():

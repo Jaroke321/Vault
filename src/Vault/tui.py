@@ -169,6 +169,9 @@ _CANCELLED = _Cancelled()
 class TuiUi:
     """Modal dialogs for commands that need to ask the user something.
 
+    Implements :class:`~Vault.ui.ReplUi` — injected as ``BaseCommand.ui`` in
+    fixed-layout mode by ``cli.py``.
+
     Every method here is called from the worker thread (see the module
     docstring's thread invariant) and blocks that thread on a `queue.Queue`
     while the dialog is shown on the loop thread. `dialog_ready` is the
