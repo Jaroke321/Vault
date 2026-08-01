@@ -592,20 +592,31 @@ class DBHandler:
             ).fetchone()
         return float(row[0]) if row is not None else None
 
-    def get_value_row(self, field_name: str, month: str) -> tuple[float, str] | None:
-        """Return (amount, recorded_at) for one active record+month, or None if absent."""
+    def get_value_row(self, field_name: str, month: str) -> tuple[float, str, float | None] | None:
+        """Return (amount, recorded_at, price) for one active record+month, or None
+        if absent. `price` is always None for monetary categories (no such column
+        exists on their snapshot table); for is_priced categories it's the stored
+        per-unit price, which may itself be NULL."""
         with sqlite3.connect(self.db_path) as conn:
             resolved = self._field_and_category(conn, field_name)
             if resolved is None:
                 return None
             field_id, category_cls = resolved
+            if category_cls.is_priced:
+                row = conn.execute(
+                    f"""SELECT {category_cls.value_column}, recorded_at, price
+                        FROM {category_cls.snapshot_table}
+                        WHERE field_id = ? AND month = ?""",
+                    (field_id, month),
+                ).fetchone()
+                return (float(row[0]), row[1], row[2]) if row is not None else None
             row = conn.execute(
                 f"""SELECT {category_cls.value_column}, recorded_at
                     FROM {category_cls.snapshot_table}
                     WHERE field_id = ? AND month = ?""",
                 (field_id, month),
             ).fetchone()
-        return (float(row[0]), row[1]) if row is not None else None
+        return (float(row[0]), row[1], None) if row is not None else None
 
     def get_latest_values(self) -> list:
         """Return (name, category, unit, amount, field_id) for the most recent
