@@ -119,7 +119,7 @@ On import, fields named in the header under a known, non-`investment` category t
 
 #### Investment Pricing
 
-Investment records (metals, other commodities, stocks/ETFs) each carry a required price-tracking symbol and a per-record unit, set when the record is created. On startup, Vault fetches live market prices and uses them to convert quantities to USD in the `summary` output. Prices are cached locally so the last known value is used if a fetch fails.
+Investment records (metals, other commodities, stocks/ETFs) each carry a required price-tracking symbol and a per-record unit, set when the record is created. On startup, Vault fetches live market prices and uses them to convert quantities to USD in the `summary` output. Prices are cached locally so the last known value is used if a fetch fails. `commit` additionally records the resolved price on each investment snapshot for the current month, so historical months keep the price that was true at the time instead of being revalued at today's price.
 
 - `field add investment <name> <symbol>` — register an investment record (see Field Management above); this is the only way to set its symbol, there is no separate tag/untag step
 - `investment override <field> <price>` — lock a manual price per unit (takes precedence over live prices)
