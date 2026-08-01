@@ -401,10 +401,15 @@ class DBHandler:
         field_id, category = row
         return field_id, CATEGORIES[category]
 
-    def record_value(self, field_name: str, month: str, amount: float, recorded_at: str | None = None) -> bool:
+    def record_value(
+        self, field_name: str, month: str, amount: float,
+        recorded_at: str | None = None, price: float | None = None,
+    ) -> bool:
         """Stage a snapshot for an active record, routed to its category's snapshot
         table and value column ('value' for monetary categories, 'quantity' for
-        Investment). Upserts on (field_id, month)."""
+        Investment). Upserts on (field_id, month). `price` is the per-unit price
+        resolved at commit time and is only stored for is_priced categories;
+        ignored (and never written) for monetary ones."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             resolved = self._field_and_category(conn, field_name)
@@ -414,14 +419,25 @@ class DBHandler:
             if recorded_at is None:
                 recorded_at = datetime.datetime.now().isoformat()
             table, column = category_cls.snapshot_table, category_cls.value_column
-            conn.execute(
-                f"""INSERT INTO {table} (field_id, month, {column}, recorded_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(field_id, month)
-                    DO UPDATE SET {column} = excluded.{column},
-                                  recorded_at = excluded.recorded_at""",
-                (field_id, month, amount, recorded_at)
-            )
+            if category_cls.is_priced:
+                conn.execute(
+                    f"""INSERT INTO {table} (field_id, month, {column}, recorded_at, price)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(field_id, month)
+                        DO UPDATE SET {column} = excluded.{column},
+                                      recorded_at = excluded.recorded_at,
+                                      price = excluded.price""",
+                    (field_id, month, amount, recorded_at, price)
+                )
+            else:
+                conn.execute(
+                    f"""INSERT INTO {table} (field_id, month, {column}, recorded_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(field_id, month)
+                        DO UPDATE SET {column} = excluded.{column},
+                                      recorded_at = excluded.recorded_at""",
+                    (field_id, month, amount, recorded_at)
+                )
             conn.commit()
             return True
 
