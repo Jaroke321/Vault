@@ -77,3 +77,21 @@ class PricedCategory(Category):
     value_column = "quantity"
     unit_default = "unit"  # fallback only; concrete unit is per-record (see display_unit)
     is_priced = True
+
+    @classmethod
+    def snapshot_ddl(cls) -> str:
+        """Adds a nullable `price` column on top of the base snapshot shape: the
+        per-unit price resolved at commit time. NULL means no price was captured
+        for this month (backfilled/imported history, or a past-dated commit —
+        see CommitCommand's current-month guard)."""
+        return f"""
+            CREATE TABLE IF NOT EXISTS {cls.snapshot_table} (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                field_id    INTEGER NOT NULL REFERENCES fields(id),
+                month       TEXT NOT NULL,
+                {cls.value_column} REAL NOT NULL,
+                recorded_at TEXT NOT NULL,
+                price       REAL,
+                UNIQUE(field_id, month)
+            )
+        """
