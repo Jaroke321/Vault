@@ -18,6 +18,15 @@ def _declared_columns(ddl: str, table: str) -> dict[str, sqlite3.Row]:
     return {row["name"]: row for row in rows}
 
 
+def _live_columns(conn, table: str) -> set[str]:
+    """Return the column names actually present on `table` in `conn`. An empty
+    result means the table doesn't exist yet — the caller treats that as
+    nothing to migrate, since CREATE TABLE IF NOT EXISTS will have just built
+    it at full declared shape."""
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {row[1] for row in rows}
+
+
 class DBHandler:
 
     def __init__(self, db_path: Path | None = None):
