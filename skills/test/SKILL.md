@@ -115,7 +115,21 @@ not the full test plan. Prefer **dynamic sessions derived from the diff**.
    .venv/bin/python -m compileall -q src && echo "compile ok"
    ```
 
-2. **Read the patch, invent coverage** — for each changed `src/` file:
+2. **`db_handler.py`'s migration logic (`_declared_columns` / `_live_columns`
+   / `_sync_table` / `init_db`) changed** — also run the standalone
+   old-schema-vs-migrated regression check (no pytest suite, so this is a
+   plain script rather than a test-runner target):
+
+   ```bash
+   .venv/bin/python scripts/check_migration.py
+   ```
+
+   It builds a `vault.db` with `investment_snapshots` in its pre-`price`
+   shape, seeds one row, opens it through `DBHandler`, and asserts the
+   `price` column was added and the row survived with `price IS NULL`.
+   Exits non-zero on failure.
+
+3. **Read the patch, invent coverage** — for each changed `src/` file:
 
    - Open the hunks (`git diff` / commit range). Note new branches, args,
      error messages, renames, and call sites.
@@ -129,7 +143,7 @@ not the full test plan. Prefer **dynamic sessions derived from the diff**.
    - Union coverage across changed areas into as few sessions as practical,
      but split when setup would interfere.
 
-3. **Floor sessions** — if after reading the diff you still need a starting
+4. **Floor sessions** — if after reading the diff you still need a starting
    point for which CLI surface to poke, use this table. **Never** substitute
    the baseline row for a command module whose diff you can exercise more
    specifically. Baseline is last resort for opaque shared modules only, and
@@ -146,4 +160,4 @@ not the full test plan. Prefer **dynamic sessions derived from the diff**.
 | `help.py`, `base.py`, `cli.py`, `db_handler.py`, `test_data.py`, other `src/Vault/*` | Derive from the hunks; **baseline** (`field list` → `summary` → `exit`) only if you cannot map a tighter session |
 | Docs / `skills/` / workflows only | no vault run; compileall N/A |
 
-4. Count each distinct check (compileall, each session) toward `X/Y passed`.
+5. Count each distinct check (compileall, `check_migration.py` when run, each session) toward `X/Y passed`.
