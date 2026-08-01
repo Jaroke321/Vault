@@ -1,3 +1,14 @@
+"""Schema migration: categories own their DDL (Category.snapshot_ddl() /
+meta_ddl()); init_db() creates any missing table at full declared shape, then
+diffs every existing table's live columns against that same DDL and issues
+ALTER TABLE ADD COLUMN for anything missing (_sync_table). This is additive
+only — a newly declared column must be nullable or have a constant default,
+since SQLite can't ADD COLUMN a NOT NULL column without one, or a primary key
+at all. Renames, type changes, drops, and data backfills are not supported;
+a schema change needing any of those requires a real stepped-migration
+mechanism, not this one. When you add a column to a category's DDL, that's
+the whole migration — no separate migration step to write or register."""
+
 import sqlite3
 import datetime
 from pathlib import Path
@@ -75,9 +86,13 @@ class DBHandler:
         self.init_db()
 
     def init_db(self):
-        """Wipe-and-recreate schema — no migration. The fixed CATEGORIES registry
-        (data_types/__init__.py) drives table creation: one snapshot table and, where
-        declared, one meta table per category, alongside the shared fields registry."""
+        """Create-then-sync: the fixed CATEGORIES registry (data_types/__init__.py)
+        drives table creation (one snapshot table and, where declared, one meta
+        table per category, alongside the shared fields registry), then every
+        table is diffed against its declared shape and patched with any missing
+        columns. See the module docstring for what that migration can and can't
+        do. Runs on every startup, so an existing vault.db picks up newly
+        declared columns without losing its history."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute(_FIELDS_DDL)
