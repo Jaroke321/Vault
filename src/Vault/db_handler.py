@@ -51,6 +51,20 @@ def _sync_table(conn, table: str, ddl: str) -> None:
         conn.execute(clause)
 
 
+_FIELDS_DDL = """
+    CREATE TABLE IF NOT EXISTS fields (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        name           TEXT    NOT NULL,
+        category       TEXT    NOT NULL,
+        note           TEXT,
+        status         TEXT    NOT NULL DEFAULT 'active',
+        replaces_id    INTEGER REFERENCES fields(id),
+        created_at     TEXT    NOT NULL,
+        deactivated_at TEXT
+    )
+"""
+
+
 class DBHandler:
 
     def __init__(self, db_path: Path | None = None):
@@ -66,18 +80,7 @@ class DBHandler:
         declared, one meta table per category, alongside the shared fields registry."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS fields (
-                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name           TEXT    NOT NULL,
-                    category       TEXT    NOT NULL,
-                    note           TEXT,
-                    status         TEXT    NOT NULL DEFAULT 'active',
-                    replaces_id    INTEGER REFERENCES fields(id),
-                    created_at     TEXT    NOT NULL,
-                    deactivated_at TEXT
-                )
-            """)
+            conn.execute(_FIELDS_DDL)
             conn.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS ux_fields_active_name
                 ON fields(name) WHERE deactivated_at IS NULL
@@ -87,6 +90,14 @@ class DBHandler:
                 meta_ddl = category.meta_ddl()
                 if meta_ddl is not None:
                     conn.execute(meta_ddl)
+
+            _sync_table(conn, "fields", _FIELDS_DDL)
+            for category in CATEGORIES.values():
+                _sync_table(conn, category.snapshot_table, category.snapshot_ddl())
+                meta_ddl = category.meta_ddl()
+                if meta_ddl is not None:
+                    _sync_table(conn, category.meta_table, meta_ddl)
+
             conn.commit()
 
     def get_categories(self) -> list:
