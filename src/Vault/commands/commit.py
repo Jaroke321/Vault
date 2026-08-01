@@ -40,11 +40,19 @@ class CommitCommand(BaseCommand):
         """Record one staged commit entry, first capturing the prior row (or None if it
         didn't exist) so the batch can be undone later. record_value/get_value_row
         resolve the record's category internally, so there's no kind to branch on
-        here — every category routes through the same two calls."""
+        here — every category routes through the same two calls.
+
+        Also resolves the record's current price (_investment_price returns None
+        for non-priced categories, so this is safe to call unconditionally) and
+        passes it through to be stored on the snapshot."""
 
         field_name, month, value = current_commit
         prior = self.db.get_value_row(field_name, month)
-        self.db.record_value(field_name, month, value)
+
+        field_id = self.db.get_field_id(field_name)
+        price = self._investment_price(field_id) if field_id is not None else None
+
+        self.db.record_value(field_name, month, value, price=price)
 
         batch.append((field_name, month, value, prior))
 
