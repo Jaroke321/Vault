@@ -6,6 +6,18 @@ from .data_types import CATEGORIES, FieldStatus
 from .price_fetcher import PriceFetcher
 
 
+def _declared_columns(ddl: str, table: str) -> dict[str, sqlite3.Row]:
+    """Return {column_name: PRAGMA table_info row} for the shape `ddl` declares,
+    by executing it against a throwaway in-memory connection rather than parsing
+    the DDL string. A dangling `REFERENCES` target is fine here — SQLite doesn't
+    resolve foreign keys at CREATE TABLE time."""
+    with sqlite3.connect(":memory:") as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute(ddl)
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {row["name"]: row for row in rows}
+
+
 class DBHandler:
 
     def __init__(self, db_path: Path | None = None):
