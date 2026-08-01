@@ -167,6 +167,17 @@ class DBHandler:
             ).fetchone()
         return row[0] if row is not None else None
 
+    def get_field_id(self, name: str) -> int | None:
+        """Return the active record's id, or None if no active record matches.
+        Bridges name-keyed callers (record_value) to id-keyed ones
+        (PriceFetcher.get_price), the way get_field_apr does for APR."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),)
+            ).fetchone()
+        return row[0] if row is not None else None
+
     def get_fields_by_category(self, category_name: str) -> list:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
