@@ -44,13 +44,23 @@ class CommitCommand(BaseCommand):
 
         Also resolves the record's current price (_investment_price returns None
         for non-priced categories, so this is safe to call unconditionally) and
-        passes it through to be stored on the snapshot."""
+        passes it through to be stored on the snapshot -- but only for the
+        current month. _investment_price resolves the price *now*, and month
+        can be past-dated (`update <field> <value> -m YYYY-MM`), so storing it
+        for a past month would silently mislabel today's price as that month's.
+        NULL for a past-dated commit is the honest answer; task 33's as-of-date
+        and provenance fields are the real fix for backfilled history."""
 
         field_name, month, value = current_commit
         prior = self.db.get_value_row(field_name, month)
 
+        current_month = datetime.datetime.now().strftime("%Y-%m")
         field_id = self.db.get_field_id(field_name)
-        price = self._investment_price(field_id) if field_id is not None else None
+        price = (
+            self._investment_price(field_id)
+            if field_id is not None and month == current_month
+            else None
+        )
 
         self.db.record_value(field_name, month, value, price=price)
 
