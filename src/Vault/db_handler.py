@@ -38,6 +38,13 @@ def _sync_table(conn, table: str, ddl: str) -> None:
     for name, col in declared.items():
         if name in live:
             continue
+        if col["pk"] or (col["notnull"] and col["dflt_value"] is None):
+            raise RuntimeError(
+                f"Cannot migrate {table}.{name}: SQLite can't ADD COLUMN a "
+                "primary key or a NOT NULL column without a constant default. "
+                "Newly declared columns must be nullable or have a constant "
+                "default — see the module docstring."
+            )
         clause = f"ALTER TABLE {table} ADD COLUMN {name} {col['type']}"
         if col["dflt_value"] is not None:
             clause += f" DEFAULT {col['dflt_value']}"
