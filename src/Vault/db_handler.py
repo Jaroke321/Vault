@@ -27,6 +27,23 @@ def _live_columns(conn, table: str) -> set[str]:
     return {row[1] for row in rows}
 
 
+def _sync_table(conn, table: str, ddl: str) -> None:
+    """Add any column `ddl` declares that `table` is currently missing, via
+    ALTER TABLE ADD COLUMN — the additive half of init_db's migration.
+    Declared order is preserved so multiple additions land predictably.
+    Renames, type changes, and drops are out of scope; see the module
+    docstring."""
+    declared = _declared_columns(ddl, table)
+    live = _live_columns(conn, table)
+    for name, col in declared.items():
+        if name in live:
+            continue
+        clause = f"ALTER TABLE {table} ADD COLUMN {name} {col['type']}"
+        if col["dflt_value"] is not None:
+            clause += f" DEFAULT {col['dflt_value']}"
+        conn.execute(clause)
+
+
 class DBHandler:
 
     def __init__(self, db_path: Path | None = None):
