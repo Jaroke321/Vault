@@ -2,10 +2,24 @@ from .base import MonetaryCategory
 
 
 class Cash(MonetaryCategory):
-    """Liquid accounts: checking, savings, HYSA, etc."""
+    """Liquid accounts: checking, savings, HYSA, etc. has_apr covers the
+    high-yield-savings case -- a savings rate is the mirror image of a debt's
+    APR, and set_apr/get_apr/get_field_apr are already generic over any
+    category declaring meta_table + has_apr, so no new DB code is needed."""
 
     name = "cash"
     snapshot_table = "cash_snapshots"
+    meta_table = "cash_meta"
+    has_apr = True
+
+    @classmethod
+    def meta_ddl(cls) -> str:
+        return f"""
+            CREATE TABLE IF NOT EXISTS {cls.meta_table} (
+                field_id INTEGER PRIMARY KEY REFERENCES fields(id),
+                apr      REAL
+            )
+        """
 
 
 class Retirement(MonetaryCategory):
