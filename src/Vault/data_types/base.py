@@ -62,6 +62,7 @@ class Category:
             "as_of        TEXT",
             "contribution REAL",  # NULL = unknown, 0.0 = explicitly no contribution
             f"source       TEXT DEFAULT '{SnapshotSource.MANUAL.value}'",
+            "note         TEXT",  # per-snapshot, distinct from fields.note (per-record)
         ]
 
     @classmethod
