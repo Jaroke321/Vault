@@ -15,6 +15,24 @@ class FieldStatus(str, Enum):
         return {status.value for status in cls}
 
 
+class SnapshotSource(str, Enum):
+    """Provenance tag for a snapshot value -- where the stored number came from.
+    `ESTIMATE` also covers a stale cached investment price (yfinance unreachable,
+    falling back to the last successful fetch): a real market price that's gone
+    stale is a different kind of uncertainty than a fully manual guess, but it
+    doesn't get its own value here, on the theory that both are "less trustworthy
+    than a fresh number" and a fifth bucket wasn't worth the extra surface."""
+
+    MANUAL = "manual"
+    STATEMENT = "statement"
+    ESTIMATE = "estimate"
+    LIVE_PRICE = "live_price"
+
+    @classmethod
+    def values(cls) -> set[str]:
+        return {source.value for source in cls}
+
+
 class Category:
     """Declares one category's schema and net-worth behavior. Used only as a class
     (never instantiated) — DBHandler and commands read these as class-level
@@ -43,6 +61,7 @@ class Category:
         return [
             "as_of        TEXT",
             "contribution REAL",  # NULL = unknown, 0.0 = explicitly no contribution
+            f"source       TEXT DEFAULT '{SnapshotSource.MANUAL.value}'",
         ]
 
     @classmethod
