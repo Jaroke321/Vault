@@ -33,7 +33,18 @@ class Category:
     supports_backing: bool = False
 
     @classmethod
+    def snapshot_columns(cls) -> list[str]:
+        """Column definitions inserted between the fixed `recorded_at` column and the
+        `UNIQUE` constraint every snapshot table shares. Subclasses extend this
+        (via `[*super().snapshot_columns(), ...]`) instead of overriding
+        `snapshot_ddl()` directly, so every snapshot table's DDL is assembled in one
+        place. Declaration order here becomes both the fresh-table column order and
+        the order `_sync_table` adds columns to an existing table in."""
+        return []
+
+    @classmethod
     def snapshot_ddl(cls) -> str:
+        extra = "".join(f"                {col},\n" for col in cls.snapshot_columns())
         return f"""
             CREATE TABLE IF NOT EXISTS {cls.snapshot_table} (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +52,7 @@ class Category:
                 month       TEXT NOT NULL,
                 {cls.value_column} REAL NOT NULL,
                 recorded_at TEXT NOT NULL,
-                UNIQUE(field_id, month)
+{extra}                UNIQUE(field_id, month)
             )
         """
 
@@ -79,19 +90,9 @@ class PricedCategory(Category):
     is_priced = True
 
     @classmethod
-    def snapshot_ddl(cls) -> str:
+    def snapshot_columns(cls) -> list[str]:
         """Adds a nullable `price` column on top of the base snapshot shape: the
         per-unit price resolved at commit time. NULL means no price was captured
         for this month (backfilled/imported history, or a past-dated commit —
         see CommitCommand's current-month guard)."""
-        return f"""
-            CREATE TABLE IF NOT EXISTS {cls.snapshot_table} (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                field_id    INTEGER NOT NULL REFERENCES fields(id),
-                month       TEXT NOT NULL,
-                {cls.value_column} REAL NOT NULL,
-                recorded_at TEXT NOT NULL,
-                price       REAL,
-                UNIQUE(field_id, month)
-            )
-        """
+        return [*super().snapshot_columns(), "price       REAL"]
