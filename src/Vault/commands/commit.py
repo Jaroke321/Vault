@@ -40,11 +40,29 @@ class CommitCommand(BaseCommand):
         """Record one staged commit entry, first capturing the prior row (or None if it
         didn't exist) so the batch can be undone later. record_value/get_value_row
         resolve the record's category internally, so there's no kind to branch on
-        here — every category routes through the same two calls."""
+        here — every category routes through the same two calls.
+
+        Also resolves the record's current price (_investment_price returns None
+        for non-priced categories, so this is safe to call unconditionally) and
+        passes it through to be stored on the snapshot -- but only for the
+        current month. _investment_price resolves the price *now*, and month
+        can be past-dated (`update <field> <value> -m YYYY-MM`), so storing it
+        for a past month would silently mislabel today's price as that month's.
+        NULL for a past-dated commit is the honest answer; task 33's as-of-date
+        and provenance fields are the real fix for backfilled history."""
 
         field_name, month, value = current_commit
         prior = self.db.get_value_row(field_name, month)
-        self.db.record_value(field_name, month, value)
+
+        current_month = datetime.datetime.now().strftime("%Y-%m")
+        field_id = self.db.get_field_id(field_name)
+        price = (
+            self._investment_price(field_id)
+            if field_id is not None and month == current_month
+            else None
+        )
+
+        self.db.record_value(field_name, month, value, price=price)
 
         batch.append((field_name, month, value, prior))
 
@@ -121,8 +139,8 @@ class CommitCommand(BaseCommand):
                 if prior is None:
                     self.db.delete_value(field_name, month)
                 else:
-                    prior_value, recorded_at = prior
-                    self.db.record_value(field_name, month, prior_value, recorded_at)
+                    prior_value, recorded_at, prior_price = prior
+                    self.db.record_value(field_name, month, prior_value, recorded_at, price=prior_price)
 
         if pop_count < count:
             print(f"Only {pop_count} commit(s) to undo — reversed all of them.")

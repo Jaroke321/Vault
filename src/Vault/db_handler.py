@@ -1,9 +1,79 @@
+"""Schema migration: categories own their DDL (Category.snapshot_ddl() /
+meta_ddl()); init_db() creates any missing table at full declared shape, then
+diffs every existing table's live columns against that same DDL and issues
+ALTER TABLE ADD COLUMN for anything missing (_sync_table). This is additive
+only — a newly declared column must be nullable or have a constant default,
+since SQLite can't ADD COLUMN a NOT NULL column without one, or a primary key
+at all. Renames, type changes, drops, and data backfills are not supported;
+a schema change needing any of those requires a real stepped-migration
+mechanism, not this one. When you add a column to a category's DDL, that's
+the whole migration — no separate migration step to write or register."""
+
 import sqlite3
 import datetime
 from pathlib import Path
 
 from .data_types import CATEGORIES, FieldStatus
 from .price_fetcher import PriceFetcher
+
+
+def _declared_columns(ddl: str, table: str) -> dict[str, sqlite3.Row]:
+    """Return {column_name: PRAGMA table_info row} for the shape `ddl` declares,
+    by executing it against a throwaway in-memory connection rather than parsing
+    the DDL string. A dangling `REFERENCES` target is fine here — SQLite doesn't
+    resolve foreign keys at CREATE TABLE time."""
+    with sqlite3.connect(":memory:") as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute(ddl)
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {row["name"]: row for row in rows}
+
+
+def _live_columns(conn, table: str) -> set[str]:
+    """Return the column names actually present on `table` in `conn`. An empty
+    result means the table doesn't exist yet — the caller treats that as
+    nothing to migrate, since CREATE TABLE IF NOT EXISTS will have just built
+    it at full declared shape."""
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {row[1] for row in rows}
+
+
+def _sync_table(conn, table: str, ddl: str) -> None:
+    """Add any column `ddl` declares that `table` is currently missing, via
+    ALTER TABLE ADD COLUMN — the additive half of init_db's migration.
+    Declared order is preserved so multiple additions land predictably.
+    Renames, type changes, and drops are out of scope; see the module
+    docstring."""
+    declared = _declared_columns(ddl, table)
+    live = _live_columns(conn, table)
+    for name, col in declared.items():
+        if name in live:
+            continue
+        if col["pk"] or (col["notnull"] and col["dflt_value"] is None):
+            raise RuntimeError(
+                f"Cannot migrate {table}.{name}: SQLite can't ADD COLUMN a "
+                "primary key or a NOT NULL column without a constant default. "
+                "Newly declared columns must be nullable or have a constant "
+                "default — see the module docstring."
+            )
+        clause = f"ALTER TABLE {table} ADD COLUMN {name} {col['type']}"
+        if col["dflt_value"] is not None:
+            clause += f" DEFAULT {col['dflt_value']}"
+        conn.execute(clause)
+
+
+_FIELDS_DDL = """
+    CREATE TABLE IF NOT EXISTS fields (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        name           TEXT    NOT NULL,
+        category       TEXT    NOT NULL,
+        note           TEXT,
+        status         TEXT    NOT NULL DEFAULT 'active',
+        replaces_id    INTEGER REFERENCES fields(id),
+        created_at     TEXT    NOT NULL,
+        deactivated_at TEXT
+    )
+"""
 
 
 class DBHandler:
@@ -16,23 +86,16 @@ class DBHandler:
         self.init_db()
 
     def init_db(self):
-        """Wipe-and-recreate schema — no migration. The fixed CATEGORIES registry
-        (data_types/__init__.py) drives table creation: one snapshot table and, where
-        declared, one meta table per category, alongside the shared fields registry."""
+        """Create-then-sync: the fixed CATEGORIES registry (data_types/__init__.py)
+        drives table creation (one snapshot table and, where declared, one meta
+        table per category, alongside the shared fields registry), then every
+        table is diffed against its declared shape and patched with any missing
+        columns. See the module docstring for what that migration can and can't
+        do. Runs on every startup, so an existing vault.db picks up newly
+        declared columns without losing its history."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS fields (
-                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name           TEXT    NOT NULL,
-                    category       TEXT    NOT NULL,
-                    note           TEXT,
-                    status         TEXT    NOT NULL DEFAULT 'active',
-                    replaces_id    INTEGER REFERENCES fields(id),
-                    created_at     TEXT    NOT NULL,
-                    deactivated_at TEXT
-                )
-            """)
+            conn.execute(_FIELDS_DDL)
             conn.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS ux_fields_active_name
                 ON fields(name) WHERE deactivated_at IS NULL
@@ -42,6 +105,14 @@ class DBHandler:
                 meta_ddl = category.meta_ddl()
                 if meta_ddl is not None:
                     conn.execute(meta_ddl)
+
+            _sync_table(conn, "fields", _FIELDS_DDL)
+            for category in CATEGORIES.values():
+                _sync_table(conn, category.snapshot_table, category.snapshot_ddl())
+                meta_ddl = category.meta_ddl()
+                if meta_ddl is not None:
+                    _sync_table(conn, category.meta_table, meta_ddl)
+
             conn.commit()
 
     def get_categories(self) -> list:
@@ -92,6 +163,17 @@ class DBHandler:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT category FROM fields WHERE name = ? AND deactivated_at IS NULL",
+                (name.lower(),)
+            ).fetchone()
+        return row[0] if row is not None else None
+
+    def get_field_id(self, name: str) -> int | None:
+        """Return the active record's id, or None if no active record matches.
+        Bridges name-keyed callers (record_value) to id-keyed ones
+        (PriceFetcher.get_price), the way get_field_apr does for APR."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM fields WHERE name = ? AND deactivated_at IS NULL",
                 (name.lower(),)
             ).fetchone()
         return row[0] if row is not None else None
@@ -319,10 +401,15 @@ class DBHandler:
         field_id, category = row
         return field_id, CATEGORIES[category]
 
-    def record_value(self, field_name: str, month: str, amount: float, recorded_at: str | None = None) -> bool:
+    def record_value(
+        self, field_name: str, month: str, amount: float,
+        recorded_at: str | None = None, price: float | None = None,
+    ) -> bool:
         """Stage a snapshot for an active record, routed to its category's snapshot
         table and value column ('value' for monetary categories, 'quantity' for
-        Investment). Upserts on (field_id, month)."""
+        Investment). Upserts on (field_id, month). `price` is the per-unit price
+        resolved at commit time and is only stored for is_priced categories;
+        ignored (and never written) for monetary ones."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             resolved = self._field_and_category(conn, field_name)
@@ -332,14 +419,25 @@ class DBHandler:
             if recorded_at is None:
                 recorded_at = datetime.datetime.now().isoformat()
             table, column = category_cls.snapshot_table, category_cls.value_column
-            conn.execute(
-                f"""INSERT INTO {table} (field_id, month, {column}, recorded_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(field_id, month)
-                    DO UPDATE SET {column} = excluded.{column},
-                                  recorded_at = excluded.recorded_at""",
-                (field_id, month, amount, recorded_at)
-            )
+            if category_cls.is_priced:
+                conn.execute(
+                    f"""INSERT INTO {table} (field_id, month, {column}, recorded_at, price)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(field_id, month)
+                        DO UPDATE SET {column} = excluded.{column},
+                                      recorded_at = excluded.recorded_at,
+                                      price = excluded.price""",
+                    (field_id, month, amount, recorded_at, price)
+                )
+            else:
+                conn.execute(
+                    f"""INSERT INTO {table} (field_id, month, {column}, recorded_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(field_id, month)
+                        DO UPDATE SET {column} = excluded.{column},
+                                      recorded_at = excluded.recorded_at""",
+                    (field_id, month, amount, recorded_at)
+                )
             conn.commit()
             return True
 
@@ -494,20 +592,31 @@ class DBHandler:
             ).fetchone()
         return float(row[0]) if row is not None else None
 
-    def get_value_row(self, field_name: str, month: str) -> tuple[float, str] | None:
-        """Return (amount, recorded_at) for one active record+month, or None if absent."""
+    def get_value_row(self, field_name: str, month: str) -> tuple[float, str, float | None] | None:
+        """Return (amount, recorded_at, price) for one active record+month, or None
+        if absent. `price` is always None for monetary categories (no such column
+        exists on their snapshot table); for is_priced categories it's the stored
+        per-unit price, which may itself be NULL."""
         with sqlite3.connect(self.db_path) as conn:
             resolved = self._field_and_category(conn, field_name)
             if resolved is None:
                 return None
             field_id, category_cls = resolved
+            if category_cls.is_priced:
+                row = conn.execute(
+                    f"""SELECT {category_cls.value_column}, recorded_at, price
+                        FROM {category_cls.snapshot_table}
+                        WHERE field_id = ? AND month = ?""",
+                    (field_id, month),
+                ).fetchone()
+                return (float(row[0]), row[1], row[2]) if row is not None else None
             row = conn.execute(
                 f"""SELECT {category_cls.value_column}, recorded_at
                     FROM {category_cls.snapshot_table}
                     WHERE field_id = ? AND month = ?""",
                 (field_id, month),
             ).fetchone()
-        return (float(row[0]), row[1]) if row is not None else None
+        return (float(row[0]), row[1], None) if row is not None else None
 
     def get_latest_values(self) -> list:
         """Return (name, category, unit, amount, field_id) for the most recent
