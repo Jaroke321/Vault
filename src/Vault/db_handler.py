@@ -14,6 +14,7 @@ import datetime
 from pathlib import Path
 
 from .data_types import CATEGORIES, FieldStatus
+from .helper import last_trading_day, month_end
 from .price_fetcher import PriceFetcher
 
 
@@ -591,6 +592,19 @@ class DBHandler:
                 (field_id, month),
             ).fetchone()
         return float(row[0]) if row is not None else None
+
+    @staticmethod
+    def resolve_as_of(stored_as_of: str | None, month: str, is_priced: bool) -> str | None:
+        """Return the effective as-of date for a snapshot row: the stored `as_of` if
+        non-NULL, else the category-appropriate default derived from `month` --
+        `last_trading_day` for priced categories (investments track a market close),
+        `month_end` for everything else. NULL is never backfilled into the column
+        itself (the additive migration can't do that); every reader resolves as-of
+        through this method instead, so the NULL-means-default rule lives here and
+        nowhere else."""
+        if stored_as_of is not None:
+            return stored_as_of
+        return last_trading_day(month) if is_priced else month_end(month)
 
     def get_value_row(self, field_name: str, month: str) -> tuple[float, str, float | None] | None:
         """Return (amount, recorded_at, price) for one active record+month, or None
