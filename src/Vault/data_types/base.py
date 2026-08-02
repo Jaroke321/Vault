@@ -40,7 +40,10 @@ class Category:
         `snapshot_ddl()` directly, so every snapshot table's DDL is assembled in one
         place. Declaration order here becomes both the fresh-table column order and
         the order `_sync_table` adds columns to an existing table in."""
-        return ["as_of       TEXT"]
+        return [
+            "as_of        TEXT",
+            "contribution REAL",  # NULL = unknown, 0.0 = explicitly no contribution
+        ]
 
     @classmethod
     def snapshot_ddl(cls) -> str:
