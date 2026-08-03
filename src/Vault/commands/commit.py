@@ -139,8 +139,10 @@ class CommitCommand(BaseCommand):
                 if prior is None:
                     self.db.delete_value(field_name, month)
                 else:
-                    prior_value, recorded_at, prior_price = prior
-                    self.db.record_value(field_name, month, prior_value, recorded_at, price=prior_price)
+                    amount = prior["amount"]
+                    recorded_at = prior["recorded_at"]
+                    extras = {k: v for k, v in prior.items() if k not in ("amount", "recorded_at")}
+                    self.db.record_value(field_name, month, amount, recorded_at, **extras)
 
         if pop_count < count:
             print(f"Only {pop_count} commit(s) to undo — reversed all of them.")

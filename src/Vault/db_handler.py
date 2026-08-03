@@ -637,31 +637,37 @@ class DBHandler:
             return stored_as_of
         return last_trading_day(month) if is_priced else month_end(month)
 
-    def get_value_row(self, field_name: str, month: str) -> tuple[float, str, float | None] | None:
-        """Return (amount, recorded_at, price) for one active record+month, or None
-        if absent. `price` is always None for monetary categories (no such column
-        exists on their snapshot table); for is_priced categories it's the stored
-        per-unit price, which may itself be NULL."""
+    def get_value_row(self, field_name: str, month: str) -> dict | None:
+        """Return every declared column for one active record+month as
+        {column_name: value}, or None if absent. Always has 'amount' (aliased from
+        the category's value_column -- 'value' or 'quantity') and 'recorded_at';
+        which other keys are present follows category_cls.snapshot_columns()
+        directly, so e.g. 'price' only appears for is_priced categories and
+        'principal_paid' only for Debt.
+
+        A dict rather than a fixed-width tuple, so a future column doesn't require
+        touching every unpack site again. The one caller, CommitCommand.sub_undo,
+        restores every captured key explicitly on undo rather than treating a
+        captured None as "leave alone" -- those are different things here: undo
+        needs to write back a column that used to be NULL, not skip it."""
         with sqlite3.connect(self.db_path) as conn:
             resolved = self._field_and_category(conn, field_name)
             if resolved is None:
                 return None
             field_id, category_cls = resolved
-            if category_cls.is_priced:
-                row = conn.execute(
-                    f"""SELECT {category_cls.value_column}, recorded_at, price
-                        FROM {category_cls.snapshot_table}
-                        WHERE field_id = ? AND month = ?""",
-                    (field_id, month),
-                ).fetchone()
-                return (float(row[0]), row[1], row[2]) if row is not None else None
+            extra_columns = [col.split()[0] for col in category_cls.snapshot_columns()]
+            select_columns = [category_cls.value_column, "recorded_at", *extra_columns]
             row = conn.execute(
-                f"""SELECT {category_cls.value_column}, recorded_at
+                f"""SELECT {", ".join(select_columns)}
                     FROM {category_cls.snapshot_table}
                     WHERE field_id = ? AND month = ?""",
                 (field_id, month),
             ).fetchone()
-        return (float(row[0]), row[1], None) if row is not None else None
+            if row is None:
+                return None
+            result = dict(zip(select_columns, row))
+        result["amount"] = float(result.pop(category_cls.value_column))
+        return result
 
     def get_latest_values(self) -> list:
         """Return (name, category, unit, amount, field_id) for the most recent
