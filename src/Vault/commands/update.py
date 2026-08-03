@@ -27,8 +27,8 @@ class UpdateCommand(BaseCommand):
     call_str = "update" # Tells the prompt the string command in order to call this class
 
     USAGE = """
-  update [--as-of YYYY-MM-DD]                                 Interactively stage values for all fields (default: current month)
-  update <field> <value> [-m YYYY-MM] [--as-of YYYY-MM-DD]    Stage a value for a single field (value or quantity, per its category)
+  update [--as-of YYYY-MM-DD]                                                                       Interactively stage values for all fields (default: current month)
+  update <field> <value> [-m YYYY-MM] [--as-of YYYY-MM-DD] [--contribution <usd>] [--price <usd>]    Stage a value for a single field (value or quantity, per its category); --price only for priced categories
 """
 
     def entry_point(self, options: list):
@@ -51,10 +51,26 @@ class UpdateCommand(BaseCommand):
             self.usage()
             return
 
+        options, contribution, error = self._extract_float_flag(options, "--contribution", "Contribution")
+        if error:
+            print(f"[ERROR] {error}")
+            self.usage()
+            return
+
+        options, price, error = self._extract_float_flag(options, "--price", "Price")
+        if error:
+            print(f"[ERROR] {error}")
+            self.usage()
+            return
+
         if not options:
-           self._interactive_update(target_month, as_of)
+            if contribution is not None or price is not None:
+                print("[ERROR] --contribution/--price only apply to 'update <field> <value>', not interactive mode")
+                self.usage()
+                return
+            self._interactive_update(target_month, as_of)
         elif len(options) == 2:
-           self._single_update(options, target_month, as_of)
+           self._single_update(options, target_month, as_of, contribution, price)
         else:
            self.usage()
 
@@ -116,6 +132,33 @@ class UpdateCommand(BaseCommand):
             rest.append(tok)
             i += 1
         return rest, as_of, None
+
+    def _extract_float_flag(self, options: list, flag: str, label: str) -> tuple[list, float | None, str | None]:
+        """Strip a `flag <number>` pair from options; return (rest, value|None,
+        error|None). Shared by --contribution and --price, which both take a bare
+        float with no further validation at this layer -- category-specific
+        validation (e.g. rejecting --price for a non-priced record) happens in
+        _single_update, once the field's category is known."""
+        cleaned = [tok for tok in options if tok != ""]
+        rest: list[str] = []
+        value: float | None = None
+        i = 0
+        while i < len(cleaned):
+            tok = cleaned[i]
+            if tok == flag:
+                if value is not None:
+                    return options, None, f"{label} flag specified more than once"
+                if i + 1 >= len(cleaned):
+                    return options, None, f"Missing value after {label.lower()} flag ({flag} <amount>)"
+                parsed = self._parse_float(cleaned[i + 1])
+                if parsed is None:
+                    return options, None, f"Invalid {label.lower()} '{cleaned[i + 1]}' (expected a number)"
+                value = parsed
+                i += 2
+                continue
+            rest.append(tok)
+            i += 1
+        return rest, value, None
 
     @staticmethod
     def _previous_month(month: str) -> str:
@@ -209,14 +252,23 @@ class UpdateCommand(BaseCommand):
         else:
             print("\n  No changes staged.")
 
-    def _single_update(self, options, target_month, as_of=None):
+    def _single_update(self, options, target_month, as_of=None, contribution=None, price=None):
         field_name, raw = options[0], options[1]
         success = False
 
         amount = self._parse_float(raw)
         field_name_exists = self._is_a_field_name(field_name)
 
-        if field_name_exists and amount:
+        if field_name_exists and amount is not None:
+            if price is not None:
+                category = self.db.get_field_category(field_name)
+                if not CATEGORIES[category].is_priced:
+                    print(
+                        f"[ERROR] --price only applies to priced categories (investment); "
+                        f"'{field_name}' is {category}"
+                    )
+                    return False
+
             old = self.db.get_value(field_name, target_month)
             if old is not None and old != amount:
                 print(
@@ -224,7 +276,10 @@ class UpdateCommand(BaseCommand):
                     f"{self.format_value(old)} → {self.format_value(amount)}"
                 )
 
-            self.commits.append(StagedUpdate(field_name, target_month, amount, as_of=as_of))
+            self.commits.append(StagedUpdate(
+                field_name, target_month, amount,
+                as_of=as_of, contribution=contribution, price=price,
+            ))
             success = True
 
         else:
