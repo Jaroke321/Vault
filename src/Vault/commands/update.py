@@ -74,32 +74,48 @@ class UpdateCommand(BaseCommand):
         else:
            self.usage()
 
-    def _extract_target_month(self, options: list) -> tuple[list, str | None, str | None]:
-        """Strip -m/--month from options; return (rest, month|None, error|None).
-
-        Empty-string tokens (from double spaces in the naive split) are dropped.
-        When the flag is absent, month is None so the caller uses the current month.
+    def _extract_flag(
+        self, options: list, flag_names: tuple[str, ...], label: str, missing_hint: str,
+        parse, describe_invalid,
+    ) -> tuple[list, object | None, str | None]:
+        """Strip a `flag <value>` pair (any alias in flag_names) from options;
+        return (rest, value|None, error|None). Empty-string tokens (from double
+        spaces in the naive split) are dropped. Shared token-walking mechanic
+        behind -m/--month, --as-of, --contribution, and --price:
+          - `parse(token)` returns the parsed value, or None to reject it
+          - `describe_invalid(token)` builds the "Invalid ..." message for a
+            rejected token -- what counts as valid, and how to explain why,
+            differs per flag, so that part stays with each caller.
         """
         cleaned = [tok for tok in options if tok != ""]
         rest: list[str] = []
-        month: str | None = None
+        value = None
         i = 0
         while i < len(cleaned):
             tok = cleaned[i]
-            if tok in ("-m", "--month"):
-                if month is not None:
-                    return options, None, "Month flag specified more than once"
+            if tok in flag_names:
+                if value is not None:
+                    return options, None, f"{label} flag specified more than once"
                 if i + 1 >= len(cleaned):
-                    return options, None, "Missing value after month flag (-m YYYY-MM)"
-                parsed = self._parse_month_string(cleaned[i + 1])
+                    return options, None, f"Missing value after {label.lower()} flag ({missing_hint})"
+                parsed = parse(cleaned[i + 1])
                 if parsed is None:
-                    return options, None, f"Invalid month '{cleaned[i + 1]}' (expected YYYY-MM, not in the future)"
-                month = parsed
+                    return options, None, describe_invalid(cleaned[i + 1])
+                value = parsed
                 i += 2
                 continue
             rest.append(tok)
             i += 1
-        return rest, month, None
+        return rest, value, None
+
+    def _extract_target_month(self, options: list) -> tuple[list, str | None, str | None]:
+        """Strip -m/--month from options; return (rest, month|None, error|None).
+        When the flag is absent, month is None so the caller uses the current month."""
+        return self._extract_flag(
+            options, ("-m", "--month"), "Month", "-m YYYY-MM",
+            self._parse_month_string,
+            lambda tok: f"Invalid month '{tok}' (expected YYYY-MM, not in the future)",
+        )
 
     def _extract_as_of(self, options: list, target_month: str) -> tuple[list, str | None, str | None]:
         """Strip --as-of from options; return (rest, as_of|None, error|None).
@@ -109,29 +125,11 @@ class UpdateCommand(BaseCommand):
         available in one. Validated against `target_month` (already resolved from
         -m or the current month), since an as-of date belongs to a specific month.
         """
-        cleaned = [tok for tok in options if tok != ""]
-        rest: list[str] = []
-        as_of: str | None = None
-        i = 0
-        while i < len(cleaned):
-            tok = cleaned[i]
-            if tok == "--as-of":
-                if as_of is not None:
-                    return options, None, "As-of flag specified more than once"
-                if i + 1 >= len(cleaned):
-                    return options, None, "Missing value after as-of flag (--as-of YYYY-MM-DD)"
-                parsed = self._parse_as_of_date(cleaned[i + 1], target_month)
-                if parsed is None:
-                    return options, None, (
-                        f"Invalid as-of date '{cleaned[i + 1]}' "
-                        f"(expected YYYY-MM-DD, within {target_month})"
-                    )
-                as_of = parsed
-                i += 2
-                continue
-            rest.append(tok)
-            i += 1
-        return rest, as_of, None
+        return self._extract_flag(
+            options, ("--as-of",), "As-of", "--as-of YYYY-MM-DD",
+            lambda tok: self._parse_as_of_date(tok, target_month),
+            lambda tok: f"Invalid as-of date '{tok}' (expected YYYY-MM-DD, within {target_month})",
+        )
 
     def _extract_float_flag(self, options: list, flag: str, label: str) -> tuple[list, float | None, str | None]:
         """Strip a `flag <number>` pair from options; return (rest, value|None,
@@ -139,26 +137,11 @@ class UpdateCommand(BaseCommand):
         float with no further validation at this layer -- category-specific
         validation (e.g. rejecting --price for a non-priced record) happens in
         _single_update, once the field's category is known."""
-        cleaned = [tok for tok in options if tok != ""]
-        rest: list[str] = []
-        value: float | None = None
-        i = 0
-        while i < len(cleaned):
-            tok = cleaned[i]
-            if tok == flag:
-                if value is not None:
-                    return options, None, f"{label} flag specified more than once"
-                if i + 1 >= len(cleaned):
-                    return options, None, f"Missing value after {label.lower()} flag ({flag} <amount>)"
-                parsed = self._parse_float(cleaned[i + 1])
-                if parsed is None:
-                    return options, None, f"Invalid {label.lower()} '{cleaned[i + 1]}' (expected a number)"
-                value = parsed
-                i += 2
-                continue
-            rest.append(tok)
-            i += 1
-        return rest, value, None
+        return self._extract_flag(
+            options, (flag,), label, f"{flag} <amount>",
+            self._parse_float,
+            lambda tok: f"Invalid {label.lower()} '{tok}' (expected a number)",
+        )
 
     @staticmethod
     def _previous_month(month: str) -> str:

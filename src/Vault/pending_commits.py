@@ -67,11 +67,12 @@ class PendingCommits:
             return
 
         headers = ["#", "Field", "Month", "Value"]
+        label_map = dict(_EXTRA_FIELDS)
         extra_fields = [
             name for name, _ in _EXTRA_FIELDS
             if any(getattr(c, name) is not None for c in self._commits)
         ]
-        headers += [label for name, label in _EXTRA_FIELDS if name in extra_fields]
+        headers += [label_map[name] for name in extra_fields]
 
         rows = []
         for i, c in enumerate(self._commits, start=1):
