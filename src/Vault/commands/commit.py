@@ -1,4 +1,5 @@
 from .base import BaseCommand
+from ..data_types import SnapshotSource
 from ..theme import styled_staged_index
 import datetime
 
@@ -42,27 +43,51 @@ class CommitCommand(BaseCommand):
         resolve the record's category internally, so there's no kind to branch on
         here — every category routes through the same two calls.
 
-        Also resolves the record's current price (_investment_price returns None
-        for non-priced categories, so this is safe to call unconditionally) and
-        passes it through to be stored on the snapshot -- but only for the
-        current month. _investment_price resolves the price *now*, and month
-        can be past-dated (`update <field> <value> -m YYYY-MM`), so storing it
-        for a past month would silently mislabel today's price as that month's.
-        NULL for a past-dated commit is the honest answer; task 33's as-of-date
-        and provenance fields are the real fix for backfilled history."""
+        Resolves price + provenance for a priced category via
+        _investment_price_with_source (returns (None, None) for non-priced
+        categories, so this is safe to call unconditionally), and the current APR
+        for any has_apr category via get_apr (returns None otherwise, same
+        reasoning).
+
+        An explicit --price (current_commit.price) wins over live resolution
+        entirely and is recorded as 'manual', since the user supplied that number
+        themselves. Absent that, price is only auto-resolved for the current
+        month -- _investment_price_with_source resolves the price *now*, and a
+        past-dated commit storing today's price would silently mislabel it as
+        that month's. A staged --price is honored for any month, past-dated
+        included, since the user supplied that number specifically for that
+        month -- this is what makes backfilling investment history with real
+        prices possible at all.
+
+        contribution/as_of/note are only passed through when the user actually
+        staged a value for them (StagedUpdate defaults to None) -- omitting them
+        otherwise leaves any existing stored value alone on conflict, rather than
+        wiping it via a plain value correction that didn't touch those fields."""
 
         field_name, month, value = current_commit.field_name, current_commit.month, current_commit.value
         prior = self.db.get_value_row(field_name, month)
 
         current_month = datetime.datetime.now().strftime("%Y-%m")
         field_id = self.db.get_field_id(field_name)
-        price = (
-            self._investment_price(field_id)
-            if field_id is not None and month == current_month
-            else None
-        )
 
-        self.db.record_value(field_name, month, value, price=price)
+        if current_commit.price is not None:
+            price, source = current_commit.price, SnapshotSource.MANUAL.value
+        elif field_id is not None and month == current_month:
+            price, source = self._investment_price_with_source(field_id)
+        else:
+            price, source = None, None
+
+        extras = {"apr_at_time": self.db.get_apr(field_id) if field_id is not None else None}
+        if current_commit.contribution is not None:
+            extras["contribution"] = current_commit.contribution
+        if current_commit.as_of is not None:
+            extras["as_of"] = current_commit.as_of
+        if current_commit.note is not None:
+            extras["note"] = current_commit.note
+        if source is not None:
+            extras["source"] = source
+
+        self.db.record_value(field_name, month, value, price=price, **extras)
 
         batch.append((field_name, month, value, prior))
 
