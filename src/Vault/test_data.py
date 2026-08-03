@@ -17,6 +17,11 @@ def seed_test_db(db) -> None:
     db.set_apr("car_loan", 4.9)
     db.set_backing("mortgage", "house")
 
+    # --- Cash attributes: savings is a HYSA, exercising has_apr on a non-liability
+    # category (task 33) -- the same set_apr/get_apr plumbing debt already used,
+    # gated on Cash.has_apr rather than any new mechanism. ---
+    db.set_apr("savings", 4.5)
+
     # --- Notes (exercise * marker across categories in summary/show) ---
     db.set_note("checking", "Primary checking account")
     db.set_note("house", "Primary residence")
@@ -59,3 +64,34 @@ def seed_test_db(db) -> None:
     ]:
         for month, amount in zip(months, series):
             db.record_value(name, month, float(amount))
+
+    # --- Task 33: per-snapshot analytics fields, layered onto specific rows above
+    # (same value, same month -- an UPSERT that only adds the new columns) so
+    # vault --test exercises the new read paths (show/summary) without disturbing
+    # the base series or any delta calculation that depends on it. ---
+
+    # Contribution on both a monetary and a priced category -- the case that
+    # motivated storing contribution in USD everywhere, not per-record unit.
+    db.record_value("checking", "2026-01", checking_values[2], contribution=500.0)
+    db.record_value("aapl", "2026-03", aapl_shares[4], contribution=750.0)
+
+    # A per-snapshot note, distinct from the per-record note already on checking.
+    db.record_value("checking", "2026-04", checking_values[5], note="Bonus deposit")
+
+    # An estimate source -- the task's own example (a house value is an estimate).
+    db.record_value("house", "2026-04", house_values[5], source="estimate")
+
+    # Debt interest detail on the most recent month for both debt records.
+    db.record_value(
+        "mortgage", "2026-04", mortgage_values[5],
+        apr_at_time=6.25, interest_accrued=1_580.00, principal_paid=600.00,
+    )
+    db.record_value(
+        "car_loan", "2026-04", car_loan_values[5],
+        apr_at_time=4.9, interest_accrued=52.00, principal_paid=400.00,
+    )
+
+    # HYSA yield accrual on savings, mirroring the debt interest_accrued above.
+    # apr_at_time included for realism: real commit-time capture (CommitCommand.
+    # _apply_and_capture) always stamps it for any has_apr category.
+    db.record_value("savings", "2026-04", savings_values[5], apr_at_time=4.5, interest_accrued=42.00)
