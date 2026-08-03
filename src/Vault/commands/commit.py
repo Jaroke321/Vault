@@ -51,7 +51,7 @@ class CommitCommand(BaseCommand):
         NULL for a past-dated commit is the honest answer; task 33's as-of-date
         and provenance fields are the real fix for backfilled history."""
 
-        field_name, month, value = current_commit
+        field_name, month, value = current_commit.field_name, current_commit.month, current_commit.value
         prior = self.db.get_value_row(field_name, month)
 
         current_month = datetime.datetime.now().strftime("%Y-%m")

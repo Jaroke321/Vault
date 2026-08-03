@@ -1,4 +1,32 @@
+from dataclasses import dataclass
+
 from .theme import styled_staged_index
+
+
+@dataclass
+class StagedUpdate:
+    """One staged-but-not-yet-committed field update. The task-33 fields default to
+    None and are only ever set by a caller that actually collected them (an
+    interactive prompt, a CLI flag) -- nothing here assumes they're populated."""
+
+    field_name: str
+    month: str
+    value: float
+    contribution: float | None = None
+    as_of: str | None = None
+    source: str | None = None
+    note: str | None = None
+    price: float | None = None
+
+
+_EXTRA_FIELDS = (
+    ("contribution", "Contribution"),
+    ("as_of", "As Of"),
+    ("source", "Source"),
+    ("note", "Note"),
+    ("price", "Price"),
+)
+
 
 class PendingCommits:
     """Owns the list of staged-but-not-yet-committed field updates and the logic to
@@ -32,14 +60,26 @@ class PendingCommits:
 
     def target_months(self):
         """Distinct months present in staged entries, sorted chronologically."""
-        return sorted({entry[1] for entry in self._commits})
+        return sorted({entry.month for entry in self._commits})
 
     def render(self):
         if not self._commits:
             return
 
         headers = ["#", "Field", "Month", "Value"]
-        rows = [[str(i), c[0], c[1], str(c[2])] for i, c in enumerate(self._commits, start=1)]
+        extra_fields = [
+            name for name, _ in _EXTRA_FIELDS
+            if any(getattr(c, name) is not None for c in self._commits)
+        ]
+        headers += [label for name, label in _EXTRA_FIELDS if name in extra_fields]
+
+        rows = []
+        for i, c in enumerate(self._commits, start=1):
+            row = [str(i), c.field_name, c.month, str(c.value)]
+            for name in extra_fields:
+                value = getattr(c, name)
+                row.append(str(value) if value is not None else "")
+            rows.append(row)
 
         widths = [len(h) for h in headers]
         for row in rows:

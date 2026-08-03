@@ -2,6 +2,7 @@ from .base import BaseCommand
 import datetime
 
 from ..data_types import CATEGORIES
+from ..pending_commits import StagedUpdate
 
 try:
     from prompt_toolkit.validation import Validator, ValidationError
@@ -87,8 +88,8 @@ class UpdateCommand(BaseCommand):
 
     def _staged_value(self, field_name, target_month):
         for entry in self.commits:
-            if entry[0] == field_name and entry[1] == target_month:
-                return entry[2]
+            if entry.field_name == field_name and entry.month == target_month:
+                return entry.value
         return None
 
     def _print_field_context(self, field_name, category, unit, target_month, previous_month):
@@ -157,7 +158,7 @@ class UpdateCommand(BaseCommand):
                         f"{self.format_value(current, unit)} → {self.format_value(amount, unit)}"
                     )
 
-                staged.append([field_name, target_month, amount])
+                staged.append(StagedUpdate(field_name, target_month, amount))
         except KeyboardInterrupt:
             print("\nUpdate cancelled.")
             return
@@ -185,7 +186,7 @@ class UpdateCommand(BaseCommand):
                     f"{self.format_value(old)} → {self.format_value(amount)}"
                 )
 
-            self.commits.append([ field_name, target_month, amount ])
+            self.commits.append(StagedUpdate(field_name, target_month, amount))
             success = True
 
         else:

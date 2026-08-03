@@ -3,6 +3,7 @@ from pathlib import Path
 
 from .base import BaseCommand
 from ..data_types import CATEGORIES
+from ..pending_commits import StagedUpdate
 
 
 class ImportCommand(BaseCommand):
@@ -125,7 +126,7 @@ class ImportCommand(BaseCommand):
                     self.db.record_value(field_name, month, value)
                     committed += 1
                 else:
-                    self.commits.append([field_name, month, value])
+                    self.commits.append(StagedUpdate(field_name, month, value))
                     staged += 1
 
         skipped = skipped_empty + skipped_invalid
