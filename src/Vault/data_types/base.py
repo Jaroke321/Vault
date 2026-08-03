@@ -57,13 +57,26 @@ class Category:
         (via `[*super().snapshot_columns(), ...]`) instead of overriding
         `snapshot_ddl()` directly, so every snapshot table's DDL is assembled in one
         place. Declaration order here becomes both the fresh-table column order and
-        the order `_sync_table` adds columns to an existing table in."""
-        return [
+        the order `_sync_table` adds columns to an existing table in.
+
+        `apr_at_time` / `interest_accrued` ride the existing `has_apr` flag rather
+        than a second one: `has_apr` means "this record has an interest rate," with
+        consequences in the meta table (one current value, set_apr/get_apr) and the
+        snapshot table (one value per month, here). A category could in principle
+        want one without the other, but nothing declaring `has_apr` today doesn't
+        also want its rate's history kept."""
+        columns = [
             "as_of        TEXT",
             "contribution REAL",  # NULL = unknown, 0.0 = explicitly no contribution
             f"source       TEXT DEFAULT '{SnapshotSource.MANUAL.value}'",
             "note         TEXT",  # per-snapshot, distinct from fields.note (per-record)
         ]
+        if cls.has_apr:
+            columns += [
+                "apr_at_time      REAL",
+                "interest_accrued REAL",
+            ]
+        return columns
 
     @classmethod
     def snapshot_ddl(cls) -> str:
