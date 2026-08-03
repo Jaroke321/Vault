@@ -15,6 +15,15 @@ class Debt(MonetaryCategory):
     supports_backing = True
 
     @classmethod
+    def snapshot_columns(cls) -> list[str]:
+        """Adds principal paid down this month on top of the shared as_of /
+        contribution / source / note / apr_at_time / interest_accrued columns.
+        Declared directly here rather than riding `has_apr`, since amortization
+        has no meaning for a savings account -- Cash is the only other has_apr
+        category and should not get this column."""
+        return [*super().snapshot_columns(), "principal_paid   REAL"]
+
+    @classmethod
     def meta_ddl(cls) -> str:
         return f"""
             CREATE TABLE IF NOT EXISTS {cls.meta_table} (
