@@ -523,6 +523,13 @@ class DBHandler:
             yield from rows
 
     def get_history(self, field_name: str = None, months: int = 6):
+        """With `field_name`: (month, amount, contribution, note) rows, oldest
+        first. contribution/note are declared unconditionally on every category
+        (Category.snapshot_columns()), so this SELECT needs no per-category
+        branching, unlike get_value_row()'s wider optional-column set.
+
+        Without `field_name`: (month_list, active_fields, data) across every
+        active record -- see get_full_history() for the shape."""
         if field_name is not None:
             with sqlite3.connect(self.db_path) as conn:
                 resolved = self._field_and_category(conn, field_name)
@@ -530,7 +537,7 @@ class DBHandler:
                     return []
                 field_id, category_cls = resolved
                 rows = conn.execute(
-                    f"""SELECT month, {category_cls.value_column}
+                    f"""SELECT month, {category_cls.value_column}, contribution, note
                         FROM {category_cls.snapshot_table}
                         WHERE field_id = ?
                         ORDER BY month DESC
