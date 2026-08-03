@@ -210,6 +210,23 @@ class BaseCommand(ABC):
             return None
         return normalized
 
+    def _parse_as_of_date(self, raw: str, month: str) -> str | None:
+        """Validate a YYYY-MM-DD token that must fall within `month` (a YYYY-MM
+        key); return it unchanged or None. Not just format-checked -- `raw` has to
+        be a real calendar date (rejects '2026-02-30') and has to belong to `month`,
+        or resolve_as_of()'s NULL-means-month-end fallback would silently mean a
+        different month than what the value is actually being staged for.
+        """
+        if not isinstance(raw, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            return None
+        try:
+            parsed = datetime.date.fromisoformat(raw)
+        except ValueError:
+            return None
+        if parsed.strftime("%Y-%m") != month:
+            return None
+        return raw
+
     def _parse_float(self, raw: str):
         try:
             return float(raw.replace("$", "").replace(",", "").strip())

@@ -27,8 +27,8 @@ class UpdateCommand(BaseCommand):
     call_str = "update" # Tells the prompt the string command in order to call this class
 
     USAGE = """
-  update                               Interactively stage values for all fields (default: current month)
-  update <field> <value> [-m YYYY-MM]  Stage a value for a single field (value or quantity, per its category)
+  update [--as-of YYYY-MM-DD]                                 Interactively stage values for all fields (default: current month)
+  update <field> <value> [-m YYYY-MM] [--as-of YYYY-MM-DD]    Stage a value for a single field (value or quantity, per its category)
 """
 
     def entry_point(self, options: list):
@@ -45,10 +45,16 @@ class UpdateCommand(BaseCommand):
 
         target_month = flagged_month if flagged_month is not None else current_month
 
+        options, as_of, error = self._extract_as_of(options, target_month)
+        if error:
+            print(f"[ERROR] {error}")
+            self.usage()
+            return
+
         if not options:
-           self._interactive_update(target_month)
+           self._interactive_update(target_month, as_of)
         elif len(options) == 2:
-           self._single_update(options, target_month)
+           self._single_update(options, target_month, as_of)
         else:
            self.usage()
 
@@ -78,6 +84,38 @@ class UpdateCommand(BaseCommand):
             rest.append(tok)
             i += 1
         return rest, month, None
+
+    def _extract_as_of(self, options: list, target_month: str) -> tuple[list, str | None, str | None]:
+        """Strip --as-of from options; return (rest, as_of|None, error|None).
+
+        Applies uniformly to both the interactive and single-value forms, the same
+        way -m/--month does -- there's no reason an as-of override should only be
+        available in one. Validated against `target_month` (already resolved from
+        -m or the current month), since an as-of date belongs to a specific month.
+        """
+        cleaned = [tok for tok in options if tok != ""]
+        rest: list[str] = []
+        as_of: str | None = None
+        i = 0
+        while i < len(cleaned):
+            tok = cleaned[i]
+            if tok == "--as-of":
+                if as_of is not None:
+                    return options, None, "As-of flag specified more than once"
+                if i + 1 >= len(cleaned):
+                    return options, None, "Missing value after as-of flag (--as-of YYYY-MM-DD)"
+                parsed = self._parse_as_of_date(cleaned[i + 1], target_month)
+                if parsed is None:
+                    return options, None, (
+                        f"Invalid as-of date '{cleaned[i + 1]}' "
+                        f"(expected YYYY-MM-DD, within {target_month})"
+                    )
+                as_of = parsed
+                i += 2
+                continue
+            rest.append(tok)
+            i += 1
+        return rest, as_of, None
 
     @staticmethod
     def _previous_month(month: str) -> str:
@@ -118,7 +156,7 @@ class UpdateCommand(BaseCommand):
     ####################################
     # Sub-commands
     ####################################
-    def _interactive_update(self, target_month):
+    def _interactive_update(self, target_month, as_of=None):
         if not self._can_prompt_interactively():
             self.usage()
             return
@@ -158,7 +196,7 @@ class UpdateCommand(BaseCommand):
                         f"{self.format_value(current, unit)} → {self.format_value(amount, unit)}"
                     )
 
-                staged.append(StagedUpdate(field_name, target_month, amount))
+                staged.append(StagedUpdate(field_name, target_month, amount, as_of=as_of))
         except KeyboardInterrupt:
             print("\nUpdate cancelled.")
             return
@@ -171,7 +209,7 @@ class UpdateCommand(BaseCommand):
         else:
             print("\n  No changes staged.")
 
-    def _single_update(self, options, target_month):
+    def _single_update(self, options, target_month, as_of=None):
         field_name, raw = options[0], options[1]
         success = False
 
@@ -186,7 +224,7 @@ class UpdateCommand(BaseCommand):
                     f"{self.format_value(old)} → {self.format_value(amount)}"
                 )
 
-            self.commits.append(StagedUpdate(field_name, target_month, amount))
+            self.commits.append(StagedUpdate(field_name, target_month, amount, as_of=as_of))
             success = True
 
         else:
