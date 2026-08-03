@@ -62,7 +62,9 @@ class CommitCommand(BaseCommand):
         contribution/as_of/note are only passed through when the user actually
         staged a value for them (StagedUpdate defaults to None) -- omitting them
         otherwise leaves any existing stored value alone on conflict, rather than
-        wiping it via a plain value correction that didn't touch those fields."""
+        wiping it via a plain value correction that didn't touch those fields.
+        current_commit.source, if explicitly staged, wins over whatever price
+        resolution would have derived -- see the source= line below."""
 
         field_name, month, value = current_commit.field_name, current_commit.month, current_commit.value
         prior = self.db.get_value_row(field_name, month)
@@ -71,11 +73,17 @@ class CommitCommand(BaseCommand):
         field_id = self.db.get_field_id(field_name)
 
         if current_commit.price is not None:
-            price, source = current_commit.price, SnapshotSource.MANUAL.value
+            price, resolved_source = current_commit.price, SnapshotSource.MANUAL.value
         elif field_id is not None and month == current_month:
-            price, source = self._investment_price_with_source(field_id)
+            price, resolved_source = self._investment_price_with_source(field_id)
         else:
-            price, source = None, None
+            price, resolved_source = None, None
+
+        # An explicitly staged source (StagedUpdate.source) always wins over
+        # whatever price resolution would have derived -- no flag sets this today
+        # (no sub-task asked for one), but the field exists on StagedUpdate and
+        # should not be silently ignored by whichever caller does populate it.
+        source = current_commit.source if current_commit.source is not None else resolved_source
 
         extras = {"apr_at_time": self.db.get_apr(field_id) if field_id is not None else None}
         if current_commit.contribution is not None:

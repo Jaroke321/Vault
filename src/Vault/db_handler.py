@@ -702,6 +702,30 @@ class DBHandler:
         results.sort(key=lambda r: (r[1], r[0]))
         return results
 
+    def get_latest_source(self, field_id: int) -> str | None:
+        """Return the `source` value of a record's most recent snapshot, or None
+        if it has no snapshot yet. Deliberately a separate per-field query rather
+        than a column widening get_latest_values() -- that tuple already has two
+        other callers (summary.py, status.py), and this follows the same
+        one-attribute-per-call style already used there for get_apr() /
+        get_backing_info() / _investment_price()."""
+        with sqlite3.connect(self.db_path) as conn:
+            source_row = conn.execute(
+                "SELECT category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (field_id,),
+            ).fetchone()
+            if source_row is None:
+                return None
+            category_cls = CATEGORIES[source_row[0]]
+            row = conn.execute(
+                f"""SELECT source FROM {category_cls.snapshot_table}
+                    WHERE field_id = ?
+                    ORDER BY month DESC
+                    LIMIT 1""",
+                (field_id,),
+            ).fetchone()
+            return row[0] if row is not None else None
+
     def get_apr(self, field_id: int) -> float | None:
         """Return the active debt record's APR, or None if absent or not applicable."""
         with sqlite3.connect(self.db_path) as conn:
