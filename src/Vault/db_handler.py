@@ -63,6 +63,11 @@ def _sync_table(conn, table: str, ddl: str) -> None:
         conn.execute(clause)
 
 
+_UNSET = object()
+"""Sentinel for record_value()'s optional-column kwargs, distinct from None so
+"not supplied" (leave the existing value alone on an UPSERT conflict) can be told
+apart from "explicitly write NULL" (pass None)."""
+
 _FIELDS_DDL = """
     CREATE TABLE IF NOT EXISTS fields (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -405,12 +410,27 @@ class DBHandler:
     def record_value(
         self, field_name: str, month: str, amount: float,
         recorded_at: str | None = None, price: float | None = None,
+        *,
+        contribution=_UNSET, as_of=_UNSET, source=_UNSET, note=_UNSET,
+        apr_at_time=_UNSET, interest_accrued=_UNSET, principal_paid=_UNSET,
     ) -> bool:
         """Stage a snapshot for an active record, routed to its category's snapshot
         table and value column ('value' for monetary categories, 'quantity' for
-        Investment). Upserts on (field_id, month). `price` is the per-unit price
-        resolved at commit time and is only stored for is_priced categories;
-        ignored (and never written) for monetary ones."""
+        Investment). Upserts on (field_id, month).
+
+        `price` keeps its pre-task-33 behavior for backward compatibility: always
+        written for is_priced categories (defaulting to NULL when omitted, even on
+        conflict -- overwriting any existing price), ignored for monetary ones.
+
+        The task-33 columns (contribution, as_of, source, note, apr_at_time,
+        interest_accrued, principal_paid) default to the `_UNSET` sentinel rather
+        than `None`, so a caller can distinguish "leave this column alone" (omit
+        it -- an UPSERT conflict then leaves the existing value untouched) from
+        "explicitly write NULL" (pass None). A column not declared on this
+        category's snapshot table (e.g. principal_paid for Cash) is silently
+        dropped even if supplied, checked against category_cls.snapshot_columns()
+        rather than a hardcoded per-category list, so this stays correct as
+        columns or category flags change."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             resolved = self._field_and_category(conn, field_name)
@@ -420,25 +440,36 @@ class DBHandler:
             if recorded_at is None:
                 recorded_at = datetime.datetime.now().isoformat()
             table, column = category_cls.snapshot_table, category_cls.value_column
+
+            columns = ["field_id", "month", column, "recorded_at"]
+            values: list = [field_id, month, amount, recorded_at]
+
             if category_cls.is_priced:
-                conn.execute(
-                    f"""INSERT INTO {table} (field_id, month, {column}, recorded_at, price)
-                        VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(field_id, month)
-                        DO UPDATE SET {column} = excluded.{column},
-                                      recorded_at = excluded.recorded_at,
-                                      price = excluded.price""",
-                    (field_id, month, amount, recorded_at, price)
-                )
-            else:
-                conn.execute(
-                    f"""INSERT INTO {table} (field_id, month, {column}, recorded_at)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(field_id, month)
-                        DO UPDATE SET {column} = excluded.{column},
-                                      recorded_at = excluded.recorded_at""",
-                    (field_id, month, amount, recorded_at)
-                )
+                columns.append("price")
+                values.append(price)
+
+            declared = {col.split()[0] for col in category_cls.snapshot_columns()}
+            optional = {
+                "contribution": contribution, "as_of": as_of,
+                "source": source, "note": note,
+                "apr_at_time": apr_at_time, "interest_accrued": interest_accrued,
+                "principal_paid": principal_paid,
+            }
+            for col_name, value in optional.items():
+                if value is _UNSET or col_name not in declared:
+                    continue
+                columns.append(col_name)
+                values.append(value)
+
+            placeholders = ", ".join("?" for _ in columns)
+            updates = ", ".join(f"{c} = excluded.{c}" for c in columns[2:])
+            conn.execute(
+                f"""INSERT INTO {table} ({", ".join(columns)})
+                    VALUES ({placeholders})
+                    ON CONFLICT(field_id, month)
+                    DO UPDATE SET {updates}""",
+                values,
+            )
             conn.commit()
             return True
 
