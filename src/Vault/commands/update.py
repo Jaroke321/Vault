@@ -196,6 +196,18 @@ class UpdateCommand(BaseCommand):
             validator=_NumericValidator(),
         )
 
+    def _ask_field_contribution(self, index, total):
+        """Always labelled '$', unlike _ask_field_amount's unit -- contribution is
+        USD in/out regardless of the record's own unit (shares, troy oz, ...), so
+        an investment's contribution prompt reads differently from its amount
+        prompt on purpose."""
+        message = f"  contribution ($) [{index}/{total}]: "
+        return self._ask(
+            message,
+            placeholder="blank to skip",
+            validator=_NumericValidator(),
+        )
+
     ####################################
     # Sub-commands
     ####################################
@@ -206,11 +218,7 @@ class UpdateCommand(BaseCommand):
 
         previous_month = self._previous_month(target_month)
         staged = []
-        fields = [
-            (name, category, unit)
-            for name, category, unit in self.db.get_active_fields()
-            if not CATEGORIES[category].is_priced
-        ]
+        fields = list(self.db.get_active_fields())
         total = len(fields)
 
         print(f"\n  Interactive update for {target_month} ({total} fields)")
@@ -239,7 +247,14 @@ class UpdateCommand(BaseCommand):
                         f"{self.format_value(current, unit)} → {self.format_value(amount, unit)}"
                     )
 
-                staged.append(StagedUpdate(field_name, target_month, amount, as_of=as_of))
+                contribution_raw = self._ask_field_contribution(index, total)
+                contribution = (
+                    self._parse_float(contribution_raw) if contribution_raw.strip() else None
+                )
+
+                staged.append(StagedUpdate(
+                    field_name, target_month, amount, as_of=as_of, contribution=contribution,
+                ))
         except KeyboardInterrupt:
             print("\nUpdate cancelled.")
             return
