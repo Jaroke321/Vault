@@ -16,13 +16,13 @@ COMMAND_CLASSES: list[type[BaseCommand]] = [
     FieldCommand,
     UpdateCommand,
     CommitCommand,
-    SummaryCommand,
     ShowCommand,
     DiffCommand,
-    HelpCommand,
-    InvestmentCommand,
+    SummaryCommand,
     ExportCommand,
     ImportCommand,
+    InvestmentCommand,
+    HelpCommand,
     ExitCommand,
 ]
 
