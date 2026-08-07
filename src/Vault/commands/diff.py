@@ -1,5 +1,6 @@
 from .base import BaseCommand
 from ..helper import TABLE_COL_W, TABLE_NAME_W
+from ..theme import DEFAULT
 
 
 class DiffCommand(BaseCommand):
@@ -103,7 +104,7 @@ class DiffCommand(BaseCommand):
             delta = val2 - val1
             sign = "+" if delta >= 0 else ""
             delta_str = f"{sign}{self.format_value(abs(delta), unit)}"
-            color = self.GREEN if delta >= 0 else self.RED
+            color = DEFAULT.positive.ansi if delta >= 0 else DEFAULT.negative.ansi
             delta_str_color = self.cat_label(delta_str, color)
         else:
             delta_str_color = "--"
@@ -143,7 +144,7 @@ class DiffCommand(BaseCommand):
                 delta = val2 - val1
                 sign = "+" if delta >= 0 else ""
                 delta_str = f"{sign}{self.format_value(abs(delta), unit)}"
-                color = self.GREEN if delta >= 0 else self.RED
+                color = DEFAULT.positive.ansi if delta >= 0 else DEFAULT.negative.ansi
                 delta_cell = self.cat_label(delta_str, color)
             else:
                 delta_cell = "--"

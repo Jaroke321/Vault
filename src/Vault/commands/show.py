@@ -1,5 +1,6 @@
 from .base import BaseCommand
 from ..helper import DEFAULT_HISTORY_MONTHS, TABLE_COL_W, TABLE_NAME_W, visible_len
+from ..theme import DEFAULT
 
 class ShowCommand(BaseCommand):
 
@@ -122,7 +123,7 @@ class ShowCommand(BaseCommand):
             print(f"  APR: {apr:.2f}%")
 
         values = [value for _, value, _, _ in rows]
-        color = self.GREEN if values[-1] >= values[0] else self.RED
+        color = DEFAULT.positive.ansi if values[-1] >= values[0] else DEFAULT.negative.ansi
         print(f"  {self.cat_label(self.sparkline(values), color)}")
 
         show_contribution = any(contribution is not None for _, _, contribution, _ in rows)
@@ -145,7 +146,7 @@ class ShowCommand(BaseCommand):
                 delta = value - prev_value
                 sign = "+" if delta >= 0 else ""
                 delta_str = f"{sign}{self.format_value(abs(delta), unit)}"
-                color = self.GREEN if delta >= 0 else self.RED
+                color = DEFAULT.positive.ansi if delta >= 0 else DEFAULT.negative.ansi
                 delta_str_color = self.cat_label(delta_str, color)
             delta_pad = " " * max(17 - visible_len(delta_str_color), 0)
             month_label = self.note_label(month, snapshot_note is not None)

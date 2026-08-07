@@ -54,7 +54,7 @@ class Theme:
 
 DEFAULT = Theme(
     accent=SemanticColor(ansi=CYAN, ptk="ansicyan bold"),
-    header=SemanticColor(ansi=YELLOW, ptk="ansiyellow bold"),
+    header=SemanticColor(ansi=CYAN, ptk="ansicyan bold"),
     positive=SemanticColor(ansi=GREEN, ptk="ansigreen bold"),
     negative=SemanticColor(ansi=RED, ptk="ansired"),
     muted=SemanticColor(ptk="ansibrightblack"),
