@@ -1,8 +1,6 @@
 import argparse
-import datetime
 import os
 import sys
-import time
 from pathlib import Path
 
 # Extra imports of useful things
@@ -14,10 +12,8 @@ from .db_handler import DBHandler
 from .price_fetcher import PriceFetcher
 from .pending_commits import PendingCommits
 from .status import StatusLine
-from .helper import *
-
-# Command classes
-from .commands import FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, DiffCommand, HelpCommand, InvestmentCommand, ExportCommand, ImportCommand, ExitCommand
+from .helper import print_banner
+from .commands import COMMAND_CLASSES
 
 def main():
     parser = argparse.ArgumentParser(prog="vault")
@@ -58,10 +54,8 @@ class CLI:
         self.project_name = "[TEST] Vault" if test_mode else "Vault"
         self.pending_commits = PendingCommits()
 
-        # Need to init classes before using
-        command_class_list = [ FieldCommand, UpdateCommand, CommitCommand, SummaryCommand, ShowCommand, DiffCommand, HelpCommand, InvestmentCommand, ExportCommand, ImportCommand, ExitCommand]
         self._command_instances = []
-        self.load_command_classes(command_class_list)
+        self.load_command_classes(COMMAND_CLASSES)
 
     def run(self):
         use_tui = (
