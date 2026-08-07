@@ -14,7 +14,7 @@ import datetime
 from pathlib import Path
 
 from .data_types import CATEGORIES, FieldStatus
-from .helper import last_trading_day, month_end
+from .helper import DEFAULT_HISTORY_MONTHS, last_trading_day, month_end
 from .price_fetcher import PriceFetcher
 
 
@@ -522,7 +522,7 @@ class DBHandler:
             ).fetchall()
             yield from rows
 
-    def get_history(self, field_name: str = None, months: int = 6):
+    def get_history(self, field_name: str = None, months: int = DEFAULT_HISTORY_MONTHS):
         """With `field_name`: (month, amount, contribution, note) rows, oldest
         first. contribution/note are declared unconditionally on every category
         (Category.snapshot_columns()), so this SELECT needs no per-category
