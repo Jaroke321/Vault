@@ -20,6 +20,10 @@ from .theme import (
 NOTE_MARKER = "*"
 NOTE_LEGEND = "* = has note"
 
+DEFAULT_HISTORY_MONTHS = 6
+TABLE_NAME_W = 22
+TABLE_COL_W = 14
+
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 def strip_ansi(s: str) -> str:

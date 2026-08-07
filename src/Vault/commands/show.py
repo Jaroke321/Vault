@@ -1,5 +1,5 @@
 from .base import BaseCommand
-from ..helper import visible_len
+from ..helper import DEFAULT_HISTORY_MONTHS, TABLE_COL_W, TABLE_NAME_W, visible_len
 
 class ShowCommand(BaseCommand):
 
@@ -11,8 +11,6 @@ class ShowCommand(BaseCommand):
   show <field>                  Month-over-month trend for one field
   show <field> <n>              Trend for one field over last N months
 """
-
-    DEFAULT_MONTHS = 6
 
     def entry_point(self, options: list):
         """Function call that prompt will made when user enters in the call_str. This function is responsible for
@@ -30,7 +28,7 @@ class ShowCommand(BaseCommand):
     ####################################
     # Sub-commands
     ####################################
-    def _show_history(self, num_months: int = DEFAULT_MONTHS):
+    def _show_history(self, num_months: int = DEFAULT_HISTORY_MONTHS):
         """`show` | `show <n>` — table of the last N months across all fields."""
         month_list, active_fields, data = self.db.get_history(months=num_months)
         if not month_list:
@@ -57,7 +55,7 @@ class ShowCommand(BaseCommand):
         if num_months:
             self._show_field_trend(field_name, num_months)
 
-    def _show_field_trend(self, field_name: str, num_months: int = DEFAULT_MONTHS):
+    def _show_field_trend(self, field_name: str, num_months: int = DEFAULT_HISTORY_MONTHS):
         rows = self.db.get_history(field_name=field_name, months=num_months)
         if not rows:
             print(f"No history found for field '{field_name}'.")
@@ -67,7 +65,7 @@ class ShowCommand(BaseCommand):
         apr = self.db.get_field_apr(field_name)
         self._print_field_trend(field_name, rows, unit, note, apr)
 
-    def _show_category_trend(self, cat_name: str, num_months: int = DEFAULT_MONTHS):
+    def _show_category_trend(self, cat_name: str, num_months: int = DEFAULT_HISTORY_MONTHS):
         field_list = self.db.get_fields_by_category(category_name=cat_name)
         for field in field_list:
             self._show_field_trend(field, num_months)
@@ -76,16 +74,14 @@ class ShowCommand(BaseCommand):
     # Rendering
     ####################################
     def _print_table(self, month_list, active_fields, data):
-        COL_W = 14
-        NAME_W = 22
         notes = self.db.get_notes()
         any_noted = False
 
-        header = f"\n  {'Field':<{NAME_W}}"
+        header = f"\n  {'Field':<{TABLE_NAME_W}}"
         for month in month_list:
-            header += f"  {month:>{COL_W}}"
+            header += f"  {month:>{TABLE_COL_W}}"
         print(header)
-        print("  " + "-" * (NAME_W + (COL_W + 2) * len(month_list)))
+        print("  " + "-" * (TABLE_NAME_W + (TABLE_COL_W + 2) * len(month_list)))
 
         current_cat = None
         for field_name, category_name, unit in active_fields:
@@ -96,11 +92,11 @@ class ShowCommand(BaseCommand):
             if has_note:
                 any_noted = True
             label = self.note_label(field_name, has_note)
-            row = f"  {label:<{NAME_W}}"
+            row = f"  {label:<{TABLE_NAME_W}}"
             for month in month_list:
                 val = data.get(field_name, {}).get(month)
                 cell = self.format_value(val, unit) if val is not None else "--"
-                row += f"  {cell:>{COL_W}}"
+                row += f"  {cell:>{TABLE_COL_W}}"
             print(row)
         if any_noted:
             print(f"  {self.NOTE_LEGEND}")

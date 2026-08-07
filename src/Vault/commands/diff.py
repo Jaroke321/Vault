@@ -1,4 +1,5 @@
 from .base import BaseCommand
+from ..helper import TABLE_COL_W, TABLE_NAME_W
 
 
 class DiffCommand(BaseCommand):
@@ -9,9 +10,6 @@ class DiffCommand(BaseCommand):
   diff <m1> <y1> <m2> <y2>      Compare all fields between two months
   diff <field> <m1> <y1> <m2> <y2>   Compare one field between two months
 """
-
-    COL_W = 14
-    NAME_W = 22
 
     def entry_point(self, options: list):
         """Direct input to the correct sub-command based on argument count."""
@@ -120,9 +118,9 @@ class DiffCommand(BaseCommand):
         notes = self.db.get_notes()
         any_noted = False
 
-        header = f"\n  {'Field':<{self.NAME_W}}  {month1:>{self.COL_W}}  {month2:>{self.COL_W}}  {'Delta':>{self.COL_W}}"
+        header = f"\n  {'Field':<{TABLE_NAME_W}}  {month1:>{TABLE_COL_W}}  {month2:>{TABLE_COL_W}}  {'Delta':>{TABLE_COL_W}}"
         print(header)
-        print("  " + "-" * (self.NAME_W + (self.COL_W + 2) * 3))
+        print("  " + "-" * (TABLE_NAME_W + (TABLE_COL_W + 2) * 3))
 
         current_cat = None
         for field_name, category_name, unit in active_fields:
@@ -151,8 +149,8 @@ class DiffCommand(BaseCommand):
                 delta_cell = "--"
 
             row = (
-                f"  {label:<{self.NAME_W}}  {cell1:>{self.COL_W}}"
-                f"  {cell2:>{self.COL_W}}  {delta_cell:>{self.COL_W}}"
+                f"  {label:<{TABLE_NAME_W}}  {cell1:>{TABLE_COL_W}}"
+                f"  {cell2:>{TABLE_COL_W}}  {delta_cell:>{TABLE_COL_W}}"
             )
             print(row)
         if any_noted:

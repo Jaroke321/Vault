@@ -1,5 +1,6 @@
 from .base import BaseCommand
 from ..data_types import CATEGORIES, SnapshotSource
+from ..helper import TABLE_NAME_W
 
 class SummaryCommand(BaseCommand):
 
@@ -11,7 +12,7 @@ class SummaryCommand(BaseCommand):
 
     ROW_INDENT = "    "
     TOTAL_INDENT = "  "
-    NAME_W = 22
+    NAME_W = TABLE_NAME_W
     VALUE_W = 18
     SUB_LABEL_W = 18
     QTY_W = 18
