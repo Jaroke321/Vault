@@ -15,6 +15,24 @@ class FieldStatus(str, Enum):
         return {status.value for status in cls}
 
 
+class SnapshotSource(str, Enum):
+    """Provenance tag for a snapshot value -- where the stored number came from.
+    `ESTIMATE` also covers a stale cached investment price (yfinance unreachable,
+    falling back to the last successful fetch): a real market price that's gone
+    stale is a different kind of uncertainty than a fully manual guess, but it
+    doesn't get its own value here, on the theory that both are "less trustworthy
+    than a fresh number" and a fifth bucket wasn't worth the extra surface."""
+
+    MANUAL = "manual"
+    STATEMENT = "statement"
+    ESTIMATE = "estimate"
+    LIVE_PRICE = "live_price"
+
+    @classmethod
+    def values(cls) -> set[str]:
+        return {source.value for source in cls}
+
+
 class Category:
     """Declares one category's schema and net-worth behavior. Used only as a class
     (never instantiated) — DBHandler and commands read these as class-level
@@ -33,7 +51,36 @@ class Category:
     supports_backing: bool = False
 
     @classmethod
+    def snapshot_columns(cls) -> list[str]:
+        """Column definitions inserted between the fixed `recorded_at` column and the
+        `UNIQUE` constraint every snapshot table shares. Subclasses extend this
+        (via `[*super().snapshot_columns(), ...]`) instead of overriding
+        `snapshot_ddl()` directly, so every snapshot table's DDL is assembled in one
+        place. Declaration order here becomes both the fresh-table column order and
+        the order `_sync_table` adds columns to an existing table in.
+
+        `apr_at_time` / `interest_accrued` ride the existing `has_apr` flag rather
+        than a second one: `has_apr` means "this record has an interest rate," with
+        consequences in the meta table (one current value, set_apr/get_apr) and the
+        snapshot table (one value per month, here). A category could in principle
+        want one without the other, but nothing declaring `has_apr` today doesn't
+        also want its rate's history kept."""
+        columns = [
+            "as_of        TEXT",
+            "contribution REAL",  # NULL = unknown, 0.0 = explicitly no contribution
+            f"source       TEXT DEFAULT '{SnapshotSource.MANUAL.value}'",
+            "note         TEXT",  # per-snapshot, distinct from fields.note (per-record)
+        ]
+        if cls.has_apr:
+            columns += [
+                "apr_at_time      REAL",
+                "interest_accrued REAL",
+            ]
+        return columns
+
+    @classmethod
     def snapshot_ddl(cls) -> str:
+        extra = "".join(f"                {col},\n" for col in cls.snapshot_columns())
         return f"""
             CREATE TABLE IF NOT EXISTS {cls.snapshot_table} (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +88,7 @@ class Category:
                 month       TEXT NOT NULL,
                 {cls.value_column} REAL NOT NULL,
                 recorded_at TEXT NOT NULL,
-                UNIQUE(field_id, month)
+{extra}                UNIQUE(field_id, month)
             )
         """
 
@@ -79,19 +126,9 @@ class PricedCategory(Category):
     is_priced = True
 
     @classmethod
-    def snapshot_ddl(cls) -> str:
+    def snapshot_columns(cls) -> list[str]:
         """Adds a nullable `price` column on top of the base snapshot shape: the
         per-unit price resolved at commit time. NULL means no price was captured
         for this month (backfilled/imported history, or a past-dated commit —
         see CommitCommand's current-month guard)."""
-        return f"""
-            CREATE TABLE IF NOT EXISTS {cls.snapshot_table} (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                field_id    INTEGER NOT NULL REFERENCES fields(id),
-                month       TEXT NOT NULL,
-                {cls.value_column} REAL NOT NULL,
-                recorded_at TEXT NOT NULL,
-                price       REAL,
-                UNIQUE(field_id, month)
-            )
-        """
+        return [*super().snapshot_columns(), "price       REAL"]

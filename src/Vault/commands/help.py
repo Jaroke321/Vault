@@ -16,14 +16,14 @@ class HelpCommand(BaseCommand):
     field remove <name> [reason]                  Close a record (reason: active|sold|paid_off|closed; default: closed)
     field list                                    Show all active records by category
     field set <name> note <text>                  Attach a free-text note
-    field set <name> apr <rate>                   Set a debt's interest rate
+    field set <name> apr <rate>                   Set a debt's or (now) a cash record's interest rate
     field set <name> symbol <symbol>              Change an investment's price-tracking symbol
     field set <name> backing <asset> | clear      Link (or unlink) a debt to a backing asset-side record
     field set <name> replaces <old-name>          Mark this record as the successor of a prior one
     field set <name> status <status>              Relabel a record's lifecycle status
 
-    update                               Interactively stage values for all fields (default: current month)
-    update <field> <value> [-m YYYY-MM]  Stage a value for a single field (value or quantity, per its category)
+    update [--as-of YYYY-MM-DD]                                                                       Interactively stage values for all fields (default: current month)
+    update <field> <value> [-m YYYY-MM] [--as-of YYYY-MM-DD] [--contribution <usd>] [--price <usd>]    Stage a value for a single field (value or quantity, per its category); --price only for priced categories
 
     commit                        Commit all pending staged updates to the database
     commit <n> [n ...]            Commit one or more pending updates by index

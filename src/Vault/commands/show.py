@@ -114,21 +114,34 @@ class ShowCommand(BaseCommand):
         note: str | None = None,
         apr: float | None = None,
     ):
+        """rows are (month, value, contribution, snapshot_note) -- see
+        DBHandler.get_history(). `note` here is the per-RECORD note (fields.note,
+        shown once above); `snapshot_note` on each row is per-MONTH and rendered
+        as a marker + legend, the same convention _print_table uses for record
+        notes -- distinct data, same visual language."""
         print(f"\n  Trend for '{field_name}':")
         if note is not None:
             print(f"  Note: {note}")
         if apr is not None:
             print(f"  APR: {apr:.2f}%")
 
-        values = [value for _, value in rows]
+        values = [value for _, value, _, _ in rows]
         color = self.GREEN if values[-1] >= values[0] else self.RED
         print(f"  {self.cat_label(self.sparkline(values), color)}")
 
-        print(f"  {'Month':<10}  {'Value':>17}  {'Delta':>17}")
-        print("  " + "-" * 50)
+        show_contribution = any(contribution is not None for _, _, contribution, _ in rows)
+        any_snapshot_note = any(snapshot_note is not None for _, _, _, snapshot_note in rows)
+
+        header = f"  {'Month':<10}  {'Value':>17}  {'Delta':>17}"
+        sep_width = 50
+        if show_contribution:
+            header += f"  {'Contribution':>14}"
+            sep_width += 16
+        print(header)
+        print("  " + "-" * sep_width)
 
         prev_value = None
-        for month, value in rows:
+        for month, value, contribution, snapshot_note in rows:
             val_str = self.format_value(value, unit)
             if prev_value is None:
                 delta_str_color = "--"
@@ -139,6 +152,13 @@ class ShowCommand(BaseCommand):
                 color = self.GREEN if delta >= 0 else self.RED
                 delta_str_color = self.cat_label(delta_str, color)
             delta_pad = " " * max(17 - visible_len(delta_str_color), 0)
-            print(f"  {month:<10}  {val_str:>17}  {delta_pad}{delta_str_color}")
+            month_label = self.note_label(month, snapshot_note is not None)
+            row = f"  {month_label:<10}  {val_str:>17}  {delta_pad}{delta_str_color}"
+            if show_contribution:
+                contrib_str = self.format_value(contribution, "$") if contribution is not None else "--"
+                row += f"  {contrib_str:>14}"
+            print(row)
             prev_value = value
+        if any_snapshot_note:
+            print(f"  {self.NOTE_LEGEND}")
         print()

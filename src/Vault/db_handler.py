@@ -14,6 +14,7 @@ import datetime
 from pathlib import Path
 
 from .data_types import CATEGORIES, FieldStatus
+from .helper import last_trading_day, month_end
 from .price_fetcher import PriceFetcher
 
 
@@ -61,6 +62,11 @@ def _sync_table(conn, table: str, ddl: str) -> None:
             clause += f" DEFAULT {col['dflt_value']}"
         conn.execute(clause)
 
+
+_UNSET = object()
+"""Sentinel for record_value()'s optional-column kwargs, distinct from None so
+"not supplied" (leave the existing value alone on an UPSERT conflict) can be told
+apart from "explicitly write NULL" (pass None)."""
 
 _FIELDS_DDL = """
     CREATE TABLE IF NOT EXISTS fields (
@@ -404,12 +410,27 @@ class DBHandler:
     def record_value(
         self, field_name: str, month: str, amount: float,
         recorded_at: str | None = None, price: float | None = None,
+        *,
+        contribution=_UNSET, as_of=_UNSET, source=_UNSET, note=_UNSET,
+        apr_at_time=_UNSET, interest_accrued=_UNSET, principal_paid=_UNSET,
     ) -> bool:
         """Stage a snapshot for an active record, routed to its category's snapshot
         table and value column ('value' for monetary categories, 'quantity' for
-        Investment). Upserts on (field_id, month). `price` is the per-unit price
-        resolved at commit time and is only stored for is_priced categories;
-        ignored (and never written) for monetary ones."""
+        Investment). Upserts on (field_id, month).
+
+        `price` keeps its pre-task-33 behavior for backward compatibility: always
+        written for is_priced categories (defaulting to NULL when omitted, even on
+        conflict -- overwriting any existing price), ignored for monetary ones.
+
+        The task-33 columns (contribution, as_of, source, note, apr_at_time,
+        interest_accrued, principal_paid) default to the `_UNSET` sentinel rather
+        than `None`, so a caller can distinguish "leave this column alone" (omit
+        it -- an UPSERT conflict then leaves the existing value untouched) from
+        "explicitly write NULL" (pass None). A column not declared on this
+        category's snapshot table (e.g. principal_paid for Cash) is silently
+        dropped even if supplied, checked against category_cls.snapshot_columns()
+        rather than a hardcoded per-category list, so this stays correct as
+        columns or category flags change."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             resolved = self._field_and_category(conn, field_name)
@@ -419,25 +440,36 @@ class DBHandler:
             if recorded_at is None:
                 recorded_at = datetime.datetime.now().isoformat()
             table, column = category_cls.snapshot_table, category_cls.value_column
+
+            columns = ["field_id", "month", column, "recorded_at"]
+            values: list = [field_id, month, amount, recorded_at]
+
             if category_cls.is_priced:
-                conn.execute(
-                    f"""INSERT INTO {table} (field_id, month, {column}, recorded_at, price)
-                        VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(field_id, month)
-                        DO UPDATE SET {column} = excluded.{column},
-                                      recorded_at = excluded.recorded_at,
-                                      price = excluded.price""",
-                    (field_id, month, amount, recorded_at, price)
-                )
-            else:
-                conn.execute(
-                    f"""INSERT INTO {table} (field_id, month, {column}, recorded_at)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(field_id, month)
-                        DO UPDATE SET {column} = excluded.{column},
-                                      recorded_at = excluded.recorded_at""",
-                    (field_id, month, amount, recorded_at)
-                )
+                columns.append("price")
+                values.append(price)
+
+            declared = {col.split()[0] for col in category_cls.snapshot_columns()}
+            optional = {
+                "contribution": contribution, "as_of": as_of,
+                "source": source, "note": note,
+                "apr_at_time": apr_at_time, "interest_accrued": interest_accrued,
+                "principal_paid": principal_paid,
+            }
+            for col_name, value in optional.items():
+                if value is _UNSET or col_name not in declared:
+                    continue
+                columns.append(col_name)
+                values.append(value)
+
+            placeholders = ", ".join("?" for _ in columns)
+            updates = ", ".join(f"{c} = excluded.{c}" for c in columns[2:])
+            conn.execute(
+                f"""INSERT INTO {table} ({", ".join(columns)})
+                    VALUES ({placeholders})
+                    ON CONFLICT(field_id, month)
+                    DO UPDATE SET {updates}""",
+                values,
+            )
             conn.commit()
             return True
 
@@ -491,6 +523,13 @@ class DBHandler:
             yield from rows
 
     def get_history(self, field_name: str = None, months: int = 6):
+        """With `field_name`: (month, amount, contribution, note) rows, oldest
+        first. contribution/note are declared unconditionally on every category
+        (Category.snapshot_columns()), so this SELECT needs no per-category
+        branching, unlike get_value_row()'s wider optional-column set.
+
+        Without `field_name`: (month_list, active_fields, data) across every
+        active record -- see get_full_history() for the shape."""
         if field_name is not None:
             with sqlite3.connect(self.db_path) as conn:
                 resolved = self._field_and_category(conn, field_name)
@@ -498,7 +537,7 @@ class DBHandler:
                     return []
                 field_id, category_cls = resolved
                 rows = conn.execute(
-                    f"""SELECT month, {category_cls.value_column}
+                    f"""SELECT month, {category_cls.value_column}, contribution, note
                         FROM {category_cls.snapshot_table}
                         WHERE field_id = ?
                         ORDER BY month DESC
@@ -592,31 +631,50 @@ class DBHandler:
             ).fetchone()
         return float(row[0]) if row is not None else None
 
-    def get_value_row(self, field_name: str, month: str) -> tuple[float, str, float | None] | None:
-        """Return (amount, recorded_at, price) for one active record+month, or None
-        if absent. `price` is always None for monetary categories (no such column
-        exists on their snapshot table); for is_priced categories it's the stored
-        per-unit price, which may itself be NULL."""
+    @staticmethod
+    def resolve_as_of(stored_as_of: str | None, month: str, is_priced: bool) -> str | None:
+        """Return the effective as-of date for a snapshot row: the stored `as_of` if
+        non-NULL, else the category-appropriate default derived from `month` --
+        `last_trading_day` for priced categories (investments track a market close),
+        `month_end` for everything else. NULL is never backfilled into the column
+        itself (the additive migration can't do that); every reader resolves as-of
+        through this method instead, so the NULL-means-default rule lives here and
+        nowhere else."""
+        if stored_as_of is not None:
+            return stored_as_of
+        return last_trading_day(month) if is_priced else month_end(month)
+
+    def get_value_row(self, field_name: str, month: str) -> dict | None:
+        """Return every declared column for one active record+month as
+        {column_name: value}, or None if absent. Always has 'amount' (aliased from
+        the category's value_column -- 'value' or 'quantity') and 'recorded_at';
+        which other keys are present follows category_cls.snapshot_columns()
+        directly, so e.g. 'price' only appears for is_priced categories and
+        'principal_paid' only for Debt.
+
+        A dict rather than a fixed-width tuple, so a future column doesn't require
+        touching every unpack site again. The one caller, CommitCommand.sub_undo,
+        restores every captured key explicitly on undo rather than treating a
+        captured None as "leave alone" -- those are different things here: undo
+        needs to write back a column that used to be NULL, not skip it."""
         with sqlite3.connect(self.db_path) as conn:
             resolved = self._field_and_category(conn, field_name)
             if resolved is None:
                 return None
             field_id, category_cls = resolved
-            if category_cls.is_priced:
-                row = conn.execute(
-                    f"""SELECT {category_cls.value_column}, recorded_at, price
-                        FROM {category_cls.snapshot_table}
-                        WHERE field_id = ? AND month = ?""",
-                    (field_id, month),
-                ).fetchone()
-                return (float(row[0]), row[1], row[2]) if row is not None else None
+            extra_columns = [col.split()[0] for col in category_cls.snapshot_columns()]
+            select_columns = [category_cls.value_column, "recorded_at", *extra_columns]
             row = conn.execute(
-                f"""SELECT {category_cls.value_column}, recorded_at
+                f"""SELECT {", ".join(select_columns)}
                     FROM {category_cls.snapshot_table}
                     WHERE field_id = ? AND month = ?""",
                 (field_id, month),
             ).fetchone()
-        return (float(row[0]), row[1], None) if row is not None else None
+            if row is None:
+                return None
+            result = dict(zip(select_columns, row))
+        result["amount"] = float(result.pop(category_cls.value_column))
+        return result
 
     def get_latest_values(self) -> list:
         """Return (name, category, unit, amount, field_id) for the most recent
@@ -643,6 +701,30 @@ class DBHandler:
                     results.append((name, category, unit, amount, field_id))
         results.sort(key=lambda r: (r[1], r[0]))
         return results
+
+    def get_latest_source(self, field_id: int) -> str | None:
+        """Return the `source` value of a record's most recent snapshot, or None
+        if it has no snapshot yet. Deliberately a separate per-field query rather
+        than a column widening get_latest_values() -- that tuple already has two
+        other callers (summary.py, status.py), and this follows the same
+        one-attribute-per-call style already used there for get_apr() /
+        get_backing_info() / _investment_price()."""
+        with sqlite3.connect(self.db_path) as conn:
+            source_row = conn.execute(
+                "SELECT category FROM fields WHERE id = ? AND deactivated_at IS NULL",
+                (field_id,),
+            ).fetchone()
+            if source_row is None:
+                return None
+            category_cls = CATEGORIES[source_row[0]]
+            row = conn.execute(
+                f"""SELECT source FROM {category_cls.snapshot_table}
+                    WHERE field_id = ?
+                    ORDER BY month DESC
+                    LIMIT 1""",
+                (field_id,),
+            ).fetchone()
+            return row[0] if row is not None else None
 
     def get_apr(self, field_id: int) -> float | None:
         """Return the active debt record's APR, or None if absent or not applicable."""

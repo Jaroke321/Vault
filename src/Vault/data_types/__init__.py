@@ -1,4 +1,4 @@
-from .base import Category, MonetaryCategory, PricedCategory, FieldStatus
+from .base import Category, MonetaryCategory, PricedCategory, FieldStatus, SnapshotSource
 from .monetary import Cash, Retirement, Asset
 from .debt import Debt
 from .investment import Investment

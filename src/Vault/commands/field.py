@@ -11,7 +11,7 @@ class FieldCommand(BaseCommand):
   field remove <name> [reason]                  Close a record (reason: active|sold|paid_off|closed; default: closed)
   field list                                    Show all active records by category
   field set <name> note <text>                  Attach a free-text note
-  field set <name> apr <rate>                   Set a debt's interest rate
+  field set <name> apr <rate>                   Set a debt's or (now) a cash record's interest rate
   field set <name> symbol <symbol>              Change an investment's price-tracking symbol
   field set <name> backing <asset> | clear      Link (or unlink) a debt to a backing asset-side record
   field set <name> replaces <old-name>          Mark this record as the successor of a prior one

@@ -1,5 +1,5 @@
 from .base import BaseCommand
-from ..data_types import CATEGORIES
+from ..data_types import CATEGORIES, SnapshotSource
 
 class SummaryCommand(BaseCommand):
 
@@ -45,9 +45,13 @@ class SummaryCommand(BaseCommand):
                 print(f"\n  {self.cat_label(category_name)}")
                 current_cat = category_name
 
+            estimate_frag = (
+                "estimate" if self.db.get_latest_source(field_id) == SnapshotSource.ESTIMATE.value else ""
+            )
+
             if category_cls.is_liability:
                 liabilities += amount
-                self._print_debt_row(label, unit, amount, field_id)
+                self._print_debt_row(label, unit, amount, field_id, estimate_frag)
 
             elif category_cls.is_priced:
                 price = self._investment_price(field_id)
@@ -55,16 +59,18 @@ class SummaryCommand(BaseCommand):
                     usd_equiv = category_cls.usd_value(amount, price)
                     assets += usd_equiv
                     self._print_investment_row(
-                        label, amount, unit, usd_equiv, price,
+                        label, amount, unit, usd_equiv, price, self._build_tag(estimate_frag),
                     )
                 else:
                     self._print_main_row(
-                        label, self.format_value(amount, unit), "(no price)"
+                        label, self.format_value(amount, unit), self._build_tag("no price", estimate_frag)
                     )
 
             else:
                 assets += amount
-                self._print_main_row(label, self.format_value(amount, unit))
+                self._print_main_row(label, self.format_value(amount, unit), self._build_tag(estimate_frag))
+                if category_cls.has_apr:
+                    self._print_apr_line(self.db.get_apr(field_id), label="Yield")
 
         net = assets - liabilities
         total_label_w = len(self.ROW_INDENT) + self.NAME_W - len(self.TOTAL_INDENT)
@@ -79,6 +85,14 @@ class SummaryCommand(BaseCommand):
     ####################################
     # Rendering
     ####################################
+    @staticmethod
+    def _build_tag(*fragments: str) -> str:
+        """Join non-empty tag fragments into one parenthesized tag, e.g.
+        _build_tag('liability', 'estimate') -> '(liability, estimate)'.
+        No non-empty fragments -> ''."""
+        parts = [f for f in fragments if f]
+        return f"({', '.join(parts)})" if parts else ""
+
     def _print_main_row(self, label: str, value: str, tag: str = "") -> None:
         tag_part = f"  {tag}" if tag else ""
         print(
@@ -105,16 +119,20 @@ class SummaryCommand(BaseCommand):
         unit: str,
         usd_equiv: float,
         price: float,
+        tag: str = "",
     ) -> None:
         qty = self.format_value(amount, unit)
         usd = self.format_value(usd_equiv, "$")
         rate = f"(@{self.format_value(price, '$')}/{unit})"
+        tag_part = f"  {tag}" if tag else ""
         print(
             f"{self.ROW_INDENT}{label:<{self.NAME_W}}"
-            f"{qty:>{self.QTY_W}}  ~ {usd:>{self.USD_W}}  {rate}"
+            f"{qty:>{self.QTY_W}}  ~ {usd:>{self.USD_W}}  {rate}{tag_part}"
         )
 
-    def _print_debt_row(self, field_name: str, unit: str, amount: float, field_id: int):
+    def _print_debt_row(
+        self, field_name: str, unit: str, amount: float, field_id: int, estimate_frag: str = "",
+    ):
         """Print a Debt row — plain liability line, or the display-only
         balance/backing-value/equity trio when linked to a backing record.
         The link never affects assets/liabilities totals: the backing record's own
@@ -123,7 +141,7 @@ class SummaryCommand(BaseCommand):
         value = self.format_value(amount, unit)
         backing = self.db.get_backing_info(field_id)
         if backing is None:
-            self._print_main_row(field_name, value, "(liability)")
+            self._print_main_row(field_name, value, self._build_tag("liability", estimate_frag))
             self._print_apr_line(apr)
             return
 
@@ -137,16 +155,22 @@ class SummaryCommand(BaseCommand):
             backing_usd = backing_cls.usd_value(backing_amount)
 
         if backing_usd is None:
-            self._print_main_row(field_name, value, "(liability, backing price unavailable)")
+            self._print_main_row(
+                field_name, value,
+                self._build_tag("liability", "backing price unavailable", estimate_frag),
+            )
             self._print_apr_line(apr)
             return
 
         equity = backing_usd - amount
-        self._print_main_row(field_name, value, "(liability)")
+        self._print_main_row(field_name, value, self._build_tag("liability", estimate_frag))
         self._print_apr_line(apr)
         self._print_sub_row(f"backed by {backing_name}", self.format_value(backing_usd, "$"))
         self._print_sub_row("equity", self.format_value(equity, "$"))
 
-    def _print_apr_line(self, apr: float | None) -> None:
+    def _print_apr_line(self, apr: float | None, label: str = "APR") -> None:
+        """`label` distinguishes a debt's APR (a cost) from an interest-earning
+        asset's rate (a yield) -- the same number reads backwards if a HYSA's
+        4.5% is captioned the same way as a credit card's 24.99%."""
         if apr is not None:
-            self._print_sub_row(f"APR: {apr:.2f}%")
+            self._print_sub_row(f"{label}: {apr:.2f}%")

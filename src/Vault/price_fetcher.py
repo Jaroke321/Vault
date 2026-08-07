@@ -143,25 +143,32 @@ class PriceFetcher:
 
         return fetched
 
-    def get_price(self, field_id: int) -> float | None:
-        """Return the best available price for a field, or None if unavailable."""
+    def get_price_with_source(self, field_id: int) -> tuple[float | None, str]:
+        """Like get_price(), but also returns which resolution tier supplied the
+        price: 'override' / 'live' / 'cached' / 'unavailable'. get_price() is
+        defined in terms of this rather than duplicating the branch logic."""
         meta = self._field_meta.get(field_id)
         if meta is None:
             # Field is not an Investment record
-            return None
+            return None, "unavailable"
 
         symbol, override_price, cached_price = meta
 
         if override_price is not None:
-            return override_price
+            return override_price, "override"
 
         if symbol in self._prices:
-            return self._prices[symbol]
+            return self._prices[symbol], "live"
 
         if cached_price is not None:
-            return cached_price
+            return cached_price, "cached"
 
-        return None
+        return None, "unavailable"
+
+    def get_price(self, field_id: int) -> float | None:
+        """Return the best available price for a field, or None if unavailable."""
+        price, _origin = self.get_price_with_source(field_id)
+        return price
 
     def probe_symbol(self, symbol: str) -> float | None:
         """Live-fetch a single symbol's price, or None if it can't be resolved.

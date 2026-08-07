@@ -1,3 +1,5 @@
+import calendar
+import datetime
 import random
 import re
 
@@ -59,6 +61,34 @@ def truncate_ansi(s: str, width: int) -> str:
         out.append(chunk[:width - visible])
 
     return "".join(out)
+
+_MONTH_RE = re.compile(r"\d{4}-\d{2}")
+
+def month_end(month: str) -> str | None:
+    """Return the last calendar day of a `YYYY-MM` key as `YYYY-MM-DD`, or None if
+    `month` isn't well-formed. Tolerant rather than raising, since CSV import passes
+    `month` through without validation (see ImportCommand.sub_csv)."""
+    if not isinstance(month, str) or not _MONTH_RE.fullmatch(month):
+        return None
+    year, mon = int(month[:4]), int(month[5:7])
+    if mon < 1 or mon > 12:
+        return None
+    last_day = calendar.monthrange(year, mon)[1]
+    return f"{year:04d}-{mon:02d}-{last_day:02d}"
+
+def last_trading_day(month: str) -> str | None:
+    """Return the most recent weekday on or before `month_end(month)`, as
+    `YYYY-MM-DD`, or None if `month` isn't well-formed. Walks back from month-end to
+    the nearest Mon-Fri day only -- there is no market holiday calendar here (see
+    PriceFetcher, which has no concept of a historical close to validate against),
+    so a month-end landing on a market holiday resolves a day off."""
+    end = month_end(month)
+    if end is None:
+        return None
+    date = datetime.date.fromisoformat(end)
+    while date.weekday() >= 5:  # Saturday=5, Sunday=6
+        date -= datetime.timedelta(days=1)
+    return date.isoformat()
 
 def note_label(name: str, has_note: bool) -> str:
     return name + NOTE_MARKER if has_note else name

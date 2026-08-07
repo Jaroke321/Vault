@@ -59,7 +59,7 @@ Categories are fixed and code-defined — `cash`, `retirement`, `asset`, `debt`,
 - `field remove <name> [reason]` — close a record, history preserved (reason: `active`/`sold`/`paid_off`/`closed`, default `closed`). Re-adding the same name afterward creates a brand-new record rather than reopening the old one — so selling a house and buying a new one under the same name gives two independent snapshot series, not one record with a value that appears to jump
 - `field list` — list all active records grouped by category, each showing its own unit
 - `field set <name> note <text>` — attach a free-text note to any record
-- `field set <name> apr <rate>` — set a debt's interest rate
+- `field set <name> apr <rate>` — set an interest rate; a debt's borrowing cost, or (now) a Cash record's yield (e.g. a high-yield savings account) — `summary` shows the difference (`APR:` vs `Yield:`)
 - `field set <name> symbol <symbol>` — change an investment's price-tracking symbol
 - `field set <name> backing <asset>` / `field set <name> backing clear` — link (or unlink) a debt to an active asset-side record (Asset, Cash, Retirement, or Investment) — purely for the display-only balance/value/equity view in `summary`; it never affects the net worth totals, since the backing record's value is already counted through its own row
 - `field set <name> replaces <old-name>` — mark this record as the successor of a prior one sharing the same name (for future reporting continuity)
@@ -69,9 +69,17 @@ Categories are fixed and code-defined — `cash`, `retirement`, `asset`, `debt`,
 
 Values are staged as pending commits and must be committed to be saved.
 
-- `update` — interactive mode: prompts for all active fields for the current month
-- `update <field> <value> [-m YYYY-MM]` — stage a value for a single field (a dollar value for monetary categories, a quantity for Investment); defaults to the current month
+- `update [--as-of YYYY-MM-DD]` — interactive mode: prompts for all active fields (including Investment, now) for the current month, then a USD contribution for each one you changed
+- `update <field> <value> [-m YYYY-MM] [--as-of YYYY-MM-DD] [--contribution <usd>] [--price <usd>]` — stage a value for a single field (a dollar value for monetary categories, a quantity for Investment); defaults to the current month
 - `-m` / `--month` — target a specific month instead of the current one (format `YYYY-MM`, not in the future); the flag can appear anywhere among the arguments, e.g. `update checking 5000 -m 2026-03` or `update -m 2026-03 checking 5000`
+- `--as-of YYYY-MM-DD` — override this snapshot's as-of date; must fall within the target month. Works with both forms above. Left unset, the as-of date defaults to **month-end** for monetary categories and the nearest weekday before month-end for Investment (no holiday calendar — a month-end landing on a market holiday is off by a trading day)
+- `--contribution <usd>` — net cash moved in or out this month, always in USD regardless of the record's own unit — buying more shares of an index fund is `update vtsax <new share count> --contribution 500`, not shares. Left blank/omitted means *unknown*, not zero; enter `--contribution 0` explicitly if a month really had none and you want that preserved for later return calculations. A reinvested dividend is **not** a contribution (no cash left your account, it belongs in growth); a dealer premium on physical metal *is* one (real cash out) and will show up as apparent negative growth the moment you buy it, since contribution reflects what you paid while the stored value tracks the market price
+- `--price <usd>` — supply the per-unit price for a priced (Investment) record explicitly; rejected for any other category. This is what makes backfilling investment history possible: a past-dated commit (`-m` in the past) has no live price to attach otherwise, and Vault won't guess by using today's price
+
+Beyond the value itself, each snapshot can carry:
+
+- **Source** — where the number came from: `manual` (typed in, or an explicit `--price`), `statement`, `estimate` (a subjective guess, e.g. a house value — or a stale cached investment price when a live fetch fails), `live_price` (a fresh market fetch at commit time, current month only). Investment records set this automatically at commit time; every other category defaults to `manual` and currently has no way to set it to anything else.
+- **Per-snapshot note** — distinct from the per-record note (`field set <name> note`, which describes the record as a whole). A per-snapshot note belongs to one specific month and marks that month's row with `*` in `show <field>`, separate from the record-level note shown above the trend table.
 
 #### Committing Values
 
@@ -85,23 +93,24 @@ Values are staged as pending commits and must be committed to be saved.
 Staged updates are **not** reprinted after every command. The bottom toolbar shows the staged count and target month(s); use `commit list` or **F2** to review the full table before committing.
 
 Undo is a session-only, in-memory stack — it is not persisted across
-restarts. Reversing a commit restores the exact prior row (its value and
-original recorded timestamp) if one existed, or removes the row entirely if
-the commit had newly created it.
+restarts. Reversing a commit restores the exact prior row — its value,
+original recorded timestamp, and every other snapshot field (contribution,
+as-of, source, note, price, interest detail) — if one existed, or removes
+the row entirely if the commit had newly created it.
 
 #### Viewing Data
 
-Fields with a note show a trailing `*` in `summary` and `show` table output, with a `* = has note` legend when any noted field appears in that view.
+Fields with a note show a trailing `*` in `summary`, `show`, and `diff`'s all-fields table output, with a `* = has note` legend when any noted field appears in that view. `show <field>`'s trend table additionally marks an individual **month** row with `*` when that specific snapshot — not the record as a whole — has its own note (see Per-snapshot note above); same marker and legend, different thing being marked.
 
 - `show` — table of the last 6 months across all fields
 - `show <n>` — table of the last N months
-- `show <field>` — month-over-month trend for a single field; prints the field's full note and APR (when set)
-- `show <field> <n>` — trend for a single field over the last N months; same note/APR header as `show <field>`
-- `show <category>` — trend for each active field in that category (note and APR shown per field when set)
+- `show <field>` — month-over-month trend for a single field; prints the field's full note and APR/Yield (when set), plus a Contribution column when any month in range has one
+- `show <field> <n>` — trend for a single field over the last N months; same header/columns as `show <field>`
+- `show <category>` — trend for each active field in that category (note, APR/Yield, and Contribution shown per field when set)
 - `diff <m1> <y1> <m2> <y2>` — compare all fields between two months (e.g. `diff 1 26 3 26` → January 2026 vs. March 2026)
 - `diff <field> <m1> <y1> <m2> <y2>` — compare one field between two months
 - Months are given as `<month> <year>` pairs; two-digit years mean 20xx (`26` → 2026)
-- `summary` — net worth snapshot: Cash/Retirement/Asset/Investment as assets, Debt as liabilities. Debts with an APR set show the rate under the balance. A Debt linked via `field set <name> backing <asset>` prints its balance, the backed record's value, and the resulting equity — display only, already reflected in the top-line net worth without double-counting
+- `summary` — net worth snapshot: Cash/Retirement/Asset/Investment as assets, Debt as liabilities. A Debt with an APR set shows the rate under the balance as `APR: X%`; a Cash record with a rate set (e.g. a HYSA) shows `Yield: X%` instead — same underlying number, different caption, since one's a cost and the other's income. A record whose most recent snapshot has `source = estimate` is tagged `(estimate)`. A Debt linked via `field set <name> backing <asset>` prints its balance, the backed record's value, and the resulting equity — display only, already reflected in the top-line net worth without double-counting
 
 #### Exporting & Importing Data
 
@@ -117,9 +126,11 @@ On import, fields named in the header under a known, non-`investment` category t
 
 **Investment columns are never imported**, in either CSV form — a CSV has no way to carry the symbol a fresh investment record needs, and export itself doesn't distinguish a quantity from a plain value, so there's no reliable way to bring that data back in. Import always reports a warning and skips the column; the CSV round trip is value-only.
 
+**The CSV round trip carries only the raw value.** As-of date, contribution, source, and per-snapshot note are not exported or imported; a value brought in via `import csv` gets `source = manual` (the default) and no contribution, as-of override, or note — the same as a bare `update` with no flags.
+
 #### Investment Pricing
 
-Investment records (metals, other commodities, stocks/ETFs) each carry a required price-tracking symbol and a per-record unit, set when the record is created. On startup, Vault fetches live market prices and uses them to convert quantities to USD in the `summary` output. Prices are cached locally so the last known value is used if a fetch fails. `commit` additionally records the resolved price on each investment snapshot for the current month, so historical months keep the price that was true at the time instead of being revalued at today's price.
+Investment records (metals, other commodities, stocks/ETFs) each carry a required price-tracking symbol and a per-record unit, set when the record is created. On startup, Vault fetches live market prices and uses them to convert quantities to USD in the `summary` output. Prices are cached locally so the last known value is used if a fetch fails. `commit` additionally records the resolved price on each investment snapshot for the current month, so historical months keep the price that was true at the time instead of being revalued at today's price. A past-dated commit gets no automatic price (Vault won't guess by using today's), unless you supply one explicitly with `--price` (see Recording Values above) — the only way to backfill investment history with real historical prices. Each stored price also records where it came from (`manual` for an override or explicit `--price`, `live_price` for a fresh fetch, `estimate` for a stale cache) — distinct from `investment list`'s live/cached/override column below, which reflects the current resolution state, not what any particular past snapshot recorded.
 
 - `field add investment <name> <symbol>` — register an investment record (see Field Management above); this is the only way to set its symbol, there is no separate tag/untag step
 - `investment override <field> <price>` — lock a manual price per unit (takes precedence over live prices)

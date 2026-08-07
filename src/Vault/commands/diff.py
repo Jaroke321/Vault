@@ -113,6 +113,13 @@ class DiffCommand(BaseCommand):
         print()
 
     def _print_table(self, month1, month2, active_fields, values1, values2):
+        """Per-record note marker, matching ShowCommand._print_table's grid exactly
+        (same self.db.get_notes() source) -- the per-snapshot note added in show's
+        single-field trend (step 19) has no equivalent here, since this grid has no
+        natural place to attach a per-month marker to a specific cell."""
+        notes = self.db.get_notes()
+        any_noted = False
+
         header = f"\n  {'Field':<{self.NAME_W}}  {month1:>{self.COL_W}}  {month2:>{self.COL_W}}  {'Delta':>{self.COL_W}}"
         print(header)
         print("  " + "-" * (self.NAME_W + (self.COL_W + 2) * 3))
@@ -122,6 +129,11 @@ class DiffCommand(BaseCommand):
             if category_name != current_cat:
                 print(f"\n  {self.cat_label(category_name)}")
                 current_cat = category_name
+
+            has_note = field_name in notes
+            if has_note:
+                any_noted = True
+            label = self.note_label(field_name, has_note)
 
             val1 = values1.get(field_name)
             val2 = values2.get(field_name)
@@ -139,8 +151,10 @@ class DiffCommand(BaseCommand):
                 delta_cell = "--"
 
             row = (
-                f"  {field_name:<{self.NAME_W}}  {cell1:>{self.COL_W}}"
+                f"  {label:<{self.NAME_W}}  {cell1:>{self.COL_W}}"
                 f"  {cell2:>{self.COL_W}}  {delta_cell:>{self.COL_W}}"
             )
             print(row)
+        if any_noted:
+            print(f"  {self.NOTE_LEGEND}")
         print()

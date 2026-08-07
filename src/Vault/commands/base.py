@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 import datetime
 import re
 
+from ..data_types import SnapshotSource
 from ..helper import (
     cat_label, format_value, note_label, print_banner, sparkline,
     BOLD, RESET,
@@ -210,6 +211,23 @@ class BaseCommand(ABC):
             return None
         return normalized
 
+    def _parse_as_of_date(self, raw: str, month: str) -> str | None:
+        """Validate a YYYY-MM-DD token that must fall within `month` (a YYYY-MM
+        key); return it unchanged or None. Not just format-checked -- `raw` has to
+        be a real calendar date (rejects '2026-02-30') and has to belong to `month`,
+        or resolve_as_of()'s NULL-means-month-end fallback would silently mean a
+        different month than what the value is actually being staged for.
+        """
+        if not isinstance(raw, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            return None
+        try:
+            parsed = datetime.date.fromisoformat(raw)
+        except ValueError:
+            return None
+        if parsed.strftime("%Y-%m") != month:
+            return None
+        return raw
+
     def _parse_float(self, raw: str):
         try:
             return float(raw.replace("$", "").replace(",", "").strip())
@@ -223,21 +241,41 @@ class BaseCommand(ABC):
     def _is_a_category_name(self, raw: str) -> bool:
         return raw.lower() in self.db.get_categories()
 
-    def _investment_price(self, field_id: int):
-        """Return the best available price for an Investment record, or None.
+    _ORIGIN_TO_SOURCE = {
+        "override": SnapshotSource.MANUAL.value,
+        "live": SnapshotSource.LIVE_PRICE.value,
+        "cached": SnapshotSource.ESTIMATE.value,  # a stale-but-real quote, not a guess
+        "unavailable": None,
+    }
+
+    def _investment_price_with_source(self, field_id: int) -> tuple[float | None, str | None]:
+        """Like _investment_price(), but also returns the SnapshotSource value that
+        should be recorded alongside the price: 'manual' for an override, 'live_price'
+        for a fresh fetch, 'estimate' for a stale cached quote, or None if no price is
+        available at all -- there's nothing to attribute a source to in that case.
 
         If a live price_fetcher is present, defers to it (override -> live -> cached).
         Otherwise falls back to reading override/cached prices straight from the DB, so
         they're still available when price_fetcher is None (e.g. --test mode).
         """
         if self.price_fetcher is not None:
-            return self.price_fetcher.get_price(field_id)
+            price, origin = self.price_fetcher.get_price_with_source(field_id)
+        else:
+            price, origin = None, "unavailable"
+            for row_field_id, _, _, override_price, cached_price, _ in self.db.get_investment_fields():
+                if row_field_id != field_id:
+                    continue
+                if override_price is not None:
+                    price, origin = override_price, "override"
+                elif cached_price is not None:
+                    price, origin = cached_price, "cached"
+                break
 
-        for row_field_id, _, _, override_price, cached_price, _ in self.db.get_investment_fields():
-            if row_field_id != field_id:
-                continue
-            if override_price is not None:
-                return override_price
-            return cached_price
+        return price, self._ORIGIN_TO_SOURCE[origin]
 
-        return None
+    def _investment_price(self, field_id: int):
+        """Return the best available price for an Investment record, or None. See
+        _investment_price_with_source() for the version that also reports where
+        the price came from."""
+        price, _source = self._investment_price_with_source(field_id)
+        return price
