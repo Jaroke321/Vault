@@ -27,26 +27,6 @@ if KeyBindings is not None:
 else:
     _ISOLATED_PROMPT_BINDINGS = None
 
-def subroute(**children: str):
-    """Mark a `sub_*` method as routing one level deeper.
-
-    Each keyword maps a child token to the name of another `sub_`-prefixed
-    method on the same class that continues dispatch for that token::
-
-        @subroute(clear="sub_override_clear")
-        def sub_override(self, options: list):
-            ...
-
-    The decorated method is otherwise unaffected — it still takes exactly
-    `(options: list)` and runs whenever routing stops here. This only tags
-    it so `CLI.load_command_classes` can fold the named children into the
-    routing tree; nothing resolves or calls them until that tree is built.
-    """
-    def decorator(func):
-        func.subroutes = children
-        return func
-    return decorator
-
 
 class BaseCommand(ABC):
     """Base for a top-level command class.
@@ -56,8 +36,7 @@ class BaseCommand(ABC):
     Each must take exactly `(options: list)`: the router calls it with
     whatever tokens are left after matching, and completion lists it by
     name. A `sub_*` method that isn't meant to be a user-facing route
-    (an internal helper) must not use that prefix — use `subroute` above
-    to add further routing depth instead.
+    (an internal helper) must not use that prefix.
     """
 
     # Helper functions — available to all subclasses via self.<name>(...)

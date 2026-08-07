@@ -1,6 +1,5 @@
 import calendar
 import datetime
-import random
 import re
 
 from .theme import (
@@ -151,53 +150,9 @@ _BANNER_H = """
     ╚████╔╝ ██║  ██║╚██████╔╝███████╗██║
      ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝"""
 
-_BANNER_BLOCKY = """
-██     ██    ███    ██     ██ ██       ████████
-██     ██   ██ ██   ██     ██ ██          ██
-██     ██  ██   ██  ██     ██ ██          ██
-██     ██ ██     ██ ██     ██ ██          ██
- ██   ██  █████████ ██     ██ ██          ██
-  ██ ██   ██     ██ ██     ██ ██          ██
-   ███    ██     ██  ███████  ████████    ██"""
-
-_BANNER_DOUBLE_BLOCKY = """
- █░█ ▄▀█ █░█ █░░ ▀█▀
- ▀▄▀ █▀█ █▄█ █▄▄ ░█░"""
-
-_BANNER_CALVIN = """
-╦  ╦╔═╗╦ ╦╦ ╔╦╗
-╚╗╔╝╠═╣║ ║║  ║
- ╚╝ ╩ ╩╚═╝╩═╝╩"""
-
-_BANNER_VAULT_FRAME = """
-      ╔═══════════════════════════════╗
-      ║                               ║
-      ║           V · A · U · L · T   ║
-      ║               ◉               ║
-      ║                               ║
-      ╚═══════════════════════════════╝"""
-
-_BANNER_J = r"""
-    =========================================
-    ||                                     ||
-    ||            V A U L T                ||
-    ||                 (O)                 ||
-    ||_____________________________________||
-    ========================================="""
-
-_STARTUP_BANNERS = (
-    _BANNER_H,
-    # _BANNER_BLOCKY,
-    # _BANNER_DOUBLE_BLOCKY,
-    # _BANNER_CALVIN,
-    # _BANNER_VAULT_FRAME,
-    # _BANNER_J,
-)
-
 def print_banner(test_mode: bool = False) -> None:
-    art = random.choice(_STARTUP_BANNERS)
     header = DEFAULT.header.ansi
-    print(f"\n{BOLD}{header}{art}{RESET}")
+    print(f"\n{BOLD}{header}{_BANNER_H}{RESET}")
     if test_mode:
         print(f"{BOLD}{header}  TEST MODE — in-memory database, changes are not saved{RESET}")
     print()

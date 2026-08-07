@@ -126,21 +126,13 @@ class CLI:
                 )
 
     def _build_route_children(self, instance, sub_commands: dict) -> dict:
-        """Recursively fold `sub_commands` (name -> bound method) into `dict[str, Route]`,
-        following any `subroute`-tagged children to build depth beyond one level."""
-
-        children = {}
-        for name, handler in sub_commands.items():
-            grandchild_names = getattr(handler, "subroutes", {})
-            grandchildren = {
-                child_name: getattr(instance, method_name)
-                for child_name, method_name in grandchild_names.items()
-            }
-            children[name] = Route(
+        """Fold `sub_commands` (name -> bound method) into `dict[str, Route]`."""
+        return {
+            name: Route(
                 handler=self._wrap_entry_point(handler, instance),
-                children=self._build_route_children(instance, grandchildren),
             )
-        return children
+            for name, handler in sub_commands.items()
+        }
 
     def _wrap_entry_point(self, entry_point, instance):
         def wrapped(options):
