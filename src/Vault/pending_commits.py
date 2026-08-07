@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from .theme import styled_staged_index
+from .helper import print_table
 
 
 @dataclass
@@ -82,18 +82,4 @@ class PendingCommits:
                 row.append(str(value) if value is not None else "")
             rows.append(row)
 
-        widths = [len(h) for h in headers]
-        for row in rows:
-            for j, cell in enumerate(row):
-                widths[j] = max(widths[j], len(cell))
-
-        fmt = "  " + "  ".join(f"{{:<{w}}}" for w in widths)
-        sep = "  " + "  ".join("-" * w for w in widths)
-
-        print(fmt.format(*headers))
-        print(sep)
-        for row in rows:
-            line = fmt.format(*row)
-            colored_num = styled_staged_index(row[0])
-            line = line.replace(row[0], colored_num, 1)
-            print(line)
+        print_table(headers, rows)

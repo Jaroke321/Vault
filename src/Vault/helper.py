@@ -15,6 +15,7 @@ from .theme import (
     RESET,
     WHITE,
     YELLOW,
+    styled_staged_index,
 )
 
 NOTE_MARKER = "*"
@@ -23,6 +24,28 @@ NOTE_LEGEND = "* = has note"
 DEFAULT_HISTORY_MONTHS = 6
 TABLE_NAME_W = 22
 TABLE_COL_W = 14
+
+def print_table(headers, rows, *, index_col: int | None = 0):
+    """Render a left-aligned table with auto-sized columns and an optional styled index."""
+    if not headers:
+        return
+
+    widths = [len(h) for h in headers]
+    str_rows = [[str(cell) for cell in row] for row in rows]
+    for row in str_rows:
+        for j, cell in enumerate(row):
+            widths[j] = max(widths[j], len(cell))
+
+    fmt = "  " + "  ".join(f"{{:<{w}}}" for w in widths)
+    sep = "  " + "  ".join("-" * w for w in widths)
+
+    print(fmt.format(*headers))
+    print(sep)
+    for row in str_rows:
+        line = fmt.format(*row)
+        if index_col is not None and index_col < len(row):
+            line = line.replace(row[index_col], styled_staged_index(row[index_col]), 1)
+        print(line)
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 

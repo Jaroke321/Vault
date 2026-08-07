@@ -1,6 +1,6 @@
 from .base import BaseCommand
 from ..data_types import SnapshotSource
-from ..theme import styled_staged_index
+from ..helper import print_table
 import datetime
 
 class CommitCommand(BaseCommand):
@@ -194,18 +194,4 @@ class CommitCommand(BaseCommand):
             for field_name, month, value, _prior in batch["entries"]:
                 rows.append([str(i), when, field_name, month, str(value)])
 
-        widths = [len(h) for h in headers]
-        for row in rows:
-            for j, cell in enumerate(row):
-                widths[j] = max(widths[j], len(cell))
-
-        fmt = "  " + "  ".join(f"{{:<{w}}}" for w in widths)
-        sep = "  " + "  ".join("-" * w for w in widths)
-
-        print(fmt.format(*headers))
-        print(sep)
-        for row in rows:
-            line = fmt.format(*row)
-            colored_num = styled_staged_index(row[0])
-            line = line.replace(row[0], colored_num, 1)
-            print(line)
+        print_table(headers, rows)
